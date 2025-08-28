@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'login_page.dart';
 
 void main() {
   runApp(const App());
@@ -13,15 +15,16 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: CarnetPage(),
+      routes: {
+        '/carnet': (_) => const CarnetPage(),
+        '/login': (_) => const LoginPage(),
+      },
+      home: const LoginPage(),
     );
   }
 }
-
-// Estudiante “logueado” (para emitir el QR de esta persona)
-const currentStudentId = "student_12345";
 
 class CarnetPage extends StatefulWidget {
   const CarnetPage({super.key});
@@ -55,10 +58,18 @@ class _CarnetPageState extends State<CarnetPage> {
 
   Future<void> _fetchQr() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) {
+        if (mounted) Navigator.of(context).pushReplacementNamed('/login');
+        return;
+      }
       final resp = await http.post(
         Uri.parse("$_baseUrl/issue-ephemeral"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"studentId": currentStudentId}),
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer $token",
+        },
       );
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -99,12 +110,24 @@ class _CarnetPageState extends State<CarnetPage> {
     super.dispose();
   }
 
+  Future<void> _logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('token');
+    if (!mounted) return;
+    Navigator.of(context).pushReplacementNamed('/login');
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = _student;
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Carnet Digital")),
+      appBar: AppBar(
+        title: const Text("Carnet Digital"),
+        actions: [
+          IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
+        ],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
