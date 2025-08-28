@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_theme.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -25,9 +26,16 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _checkToken() async {
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getString('token') != null) {
+    final token = prefs.getString('token');
+    final role = prefs.getString('role');
+    if (token != null && role != null) {
       if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed('/carnet');
+      String route;
+      if (role == 'teacher') {
+        route = '/teacher';
+      } else if (role == 'porter') route = '/porter';
+      else route = '/carnet';
+      Navigator.of(context).pushReplacementNamed(route);
     }
   }
 
@@ -49,8 +57,17 @@ class _LoginPageState extends State<LoginPage> {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('token', data['token'] as String);
+        final user = (data['user'] as Map).cast<String, dynamic>();
+        await prefs.setString('role', user['role'] as String);
+        await prefs.setString('code', user['code'] as String);
+        await prefs.setString('name', user['name'] as String);
         if (!mounted) return;
-        Navigator.of(context).pushReplacementNamed('/carnet');
+        String route;
+        if (user['role'] == 'teacher') {
+          route = '/teacher';
+        } else if (user['role'] == 'porter') route = '/porter';
+        else route = '/carnet';
+        Navigator.of(context).pushReplacementNamed(route);
       } else {
         setState(() {
           _error = 'Credenciales inválidas';
@@ -72,7 +89,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Login')),
+      appBar: AppBar(title: const Text('Login'), actions: const [ThemeToggleButton()]),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -92,9 +109,12 @@ class _LoginPageState extends State<LoginPage> {
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: _loading ? null : _login,
-              child: _loading
-                  ? const CircularProgressIndicator()
-                  : const Text('Ingresar'),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: _loading
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Text('Ingresar'),
+              ),
             ),
           ],
         ),

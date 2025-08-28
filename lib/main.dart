@@ -5,9 +5,13 @@ import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'login_page.dart';
+import 'teacher_page.dart';
+import 'student_checkin_scanner.dart';
+import 'porter_page.dart';
+import 'app_theme.dart';
 
 void main() {
-  runApp(const App());
+  runApp(ThemeController(child: const App()));
 }
 
 class App extends StatelessWidget {
@@ -15,11 +19,18 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = ThemeController.maybeOf(context);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      theme: AppThemes.light(),
+      darkTheme: AppThemes.dark(),
+      themeMode: theme?.mode ?? ThemeMode.system,
       routes: {
         '/carnet': (_) => const CarnetPage(),
         '/login': (_) => const LoginPage(),
+        '/teacher': (_) => const TeacherPage(),
+        '/porter': (_) => const PorterPage(),
+        '/scan-checkin': (_) => const StudentCheckInScanner(),
       },
       home: const LoginPage(),
     );
@@ -113,6 +124,9 @@ class _CarnetPageState extends State<CarnetPage> {
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
+    await prefs.remove('role');
+    await prefs.remove('name');
+    await prefs.remove('code');
     if (!mounted) return;
     Navigator.of(context).pushReplacementNamed('/login');
   }
@@ -125,6 +139,12 @@ class _CarnetPageState extends State<CarnetPage> {
       appBar: AppBar(
         title: const Text("Carnet Digital"),
         actions: [
+          IconButton(
+            tooltip: 'Registrar asistencia (scan)',
+            onPressed: () => Navigator.of(context).pushNamed('/scan-checkin'),
+            icon: const Icon(Icons.qr_code_scanner),
+          ),
+          const ThemeToggleButton(),
           IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
         ],
       ),
@@ -313,9 +333,9 @@ class _CarnetPageState extends State<CarnetPage> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
+                Text(
                   "Se renueva automáticamente",
-                  style: TextStyle(color: Colors.black54, fontSize: 13),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.8), fontSize: 13),
                 ),
               ],
             ),
@@ -396,17 +416,32 @@ class _QrGrande extends StatelessWidget {
       height: size,
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE6E6E6)),
-        boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black12)],
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+        boxShadow: [
+          BoxShadow(blurRadius: 6, color: Colors.black.withOpacity(0.08)),
+        ],
       ),
       child: qrUrl == null
           ? const Center(child: CircularProgressIndicator())
-          : QrImageView(
-              data: qrUrl!,
-              version: QrVersions.auto,
-              size: size - 12, // ocupa casi todo el contenedor
+          : AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              transitionBuilder: (child, anim) => FadeTransition(
+                opacity: anim,
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: 0.98, end: 1).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                  child: child,
+                ),
+              ),
+              child: QrImageView(
+                key: ValueKey(qrUrl),
+                data: qrUrl!,
+                version: QrVersions.auto,
+                size: size - 12, // ocupa casi todo el contenedor
+                backgroundColor: Colors.white,
+                // foregroundColor default es negro para buen contraste
+              ),
             ),
     );
   }

@@ -19,9 +19,13 @@ node index.js
 
 ### Sample users
 
-The demo comes with a student (`alumno1@example.edu` / `password123`) and a
-teacher (`docente@example.edu` / `password123`). The student code is used as the
-main identifier across the system.
+The demo comes with:
+
+- student: `alumno1@example.edu` / `password123`
+- teacher: `docente@example.edu` / `password123`
+- porter: `portero@example.edu` / `password123`
+
+The student code is used as the main identifier across the system.
 
 ## Frontend
 

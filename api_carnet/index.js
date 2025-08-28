@@ -13,6 +13,10 @@ const TOKEN_TTL_SECONDS = 15; // cada token/QR dura 15 segundos
 // Para este MVP usaremos memoria local en lugar de Redis
 const usedJti = new Map();
 
+// Sesiones de clase (profesor genera QR, alumnos hacen check-in)
+const classSessions = new Map(); // sessionId -> { id, teacherCode, startedAt, expiresAt }
+const attendanceBySession = new Map(); // sessionId -> [ { code, email, name, at } ]
+
 const ALLOWED_DOMAINS = (process.env.ALLOWED_EMAIL_DOMAINS || "example.edu")
   .split(",")
   .map((d) => d.trim())
@@ -167,6 +171,121 @@ app.post("/verify", async (req, res) => {
   } catch (e) {
     return res.status(401).json({ valid: false, reason: "invalid_token" });
   }
+});
+
+// --- Flujo Profesor: sesiones y asistencia ---
+
+// Profesor inicia una sesión de clase y obtiene un token para QR que los alumnos escanean
+app.post("/prof/start-session", requireAuth("teacher"), async (req, res) => {
+  try {
+    const teacherCode = req.user.code;
+    const sessionId = uuidv4();
+    const now = Math.floor(Date.now() / 1000);
+    const ttlReq = Number(req.body?.ttlSeconds);
+    const ttl = Number.isFinite(ttlReq) && ttlReq > 0 ? Math.min(Math.max(ttlReq, 60), 3600) : 10 * 60; // 1-60 min
+    const exp = now + ttl;
+
+    classSessions.set(sessionId, {
+      id: sessionId,
+      teacherCode,
+      startedAt: now,
+      expiresAt: exp,
+    });
+    attendanceBySession.set(sessionId, []);
+
+    // Token firmado con HS256 (clave compartida del API) para que el alumno lo envíe en check-in
+    const sessionToken = await new SignJWT({ scope: "attendance", session_id: sessionId })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setIssuedAt(now)
+      .setExpirationTime(exp)
+      .setIssuer("api_carnet")
+      .setSubject(teacherCode)
+      .sign(new TextEncoder().encode(JWT_SECRET));
+
+    // Texto para QR: se puede incluir URL directa del endpoint de check-in con el token como query
+    const qrText = `ATTEND:${sessionToken}`;
+
+    return res.json({
+      session: { id: sessionId, startedAt: now, expiresAt: exp },
+      qrText,
+      ttl,
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "start_session_failed" });
+  }
+});
+
+// Profesor finaliza una sesión (deja de aceptar check-ins, pero permite consultar lista)
+app.post("/prof/end-session", requireAuth("teacher"), (req, res) => {
+  const sessionId = req.body?.sessionId || req.query?.id;
+  if (!sessionId) return res.status(400).json({ error: "missing_session_id" });
+  const session = classSessions.get(sessionId);
+  if (!session) return res.status(404).json({ error: "session_not_found" });
+  if (session.teacherCode !== req.user.code) return res.status(403).json({ error: "forbidden" });
+  const now = Math.floor(Date.now() / 1000);
+  session.expiresAt = now;
+  classSessions.set(sessionId, session);
+  const attendees = attendanceBySession.get(sessionId) || [];
+  return res.json({ ok: true, session, attendees });
+});
+
+// Alumno hace check-in a la sesión escaneada (necesita estar logueado como student)
+app.post("/attendance/check-in", requireAuth("student"), async (req, res) => {
+  try {
+    const sessionToken = req.body?.sessionToken || req.query?.t;
+    if (!sessionToken) return res.status(400).json({ error: "missing_session_token" });
+
+    const { payload } = await jwtVerify(
+      sessionToken,
+      new TextEncoder().encode(JWT_SECRET),
+      { issuer: "api_carnet" }
+    );
+
+    if (payload.scope !== "attendance") {
+      return res.status(400).json({ error: "invalid_scope" });
+    }
+    const sessionId = payload.session_id;
+    if (!sessionId) return res.status(400).json({ error: "missing_session_id" });
+
+    const session = classSessions.get(sessionId);
+    if (!session) return res.status(404).json({ error: "session_not_found" });
+
+    const now = Math.floor(Date.now() / 1000);
+    if (session.expiresAt && now > session.expiresAt) {
+      return res.status(400).json({ error: "session_expired" });
+    }
+
+    const attendees = attendanceBySession.get(sessionId) || [];
+    const already = attendees.find((a) => a.code === req.user.code);
+    if (already) {
+      return res.json({ ok: true, already: true, at: already.at, sessionId });
+    }
+
+    // Buscar datos del estudiante para devolver información útil
+    const student = users.find((u) => u.code === req.user.code);
+    const entry = {
+      code: student?.code || req.user.code,
+      email: student?.email,
+      name: student?.name,
+      at: now,
+    };
+    attendees.push(entry);
+    attendanceBySession.set(sessionId, attendees);
+
+    return res.json({ ok: true, sessionId, entry });
+  } catch (e) {
+    return res.status(401).json({ error: "invalid_session_token" });
+  }
+});
+
+// Profesor consulta la asistencia de una sesión
+app.get("/prof/session/:id", requireAuth("teacher"), (req, res) => {
+  const sessionId = req.params.id;
+  const session = classSessions.get(sessionId);
+  if (!session) return res.status(404).json({ error: "session_not_found" });
+  const attendees = attendanceBySession.get(sessionId) || [];
+  return res.json({ session, attendees });
 });
 
 app.listen(PORT, () => {
