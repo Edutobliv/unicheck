@@ -4,12 +4,20 @@ import cors from "cors";
 import helmet from "helmet";
 import { generateKeyPair, SignJWT, jwtVerify, exportJWK, importJWK } from "jose";
 import { v4 as uuidv4 } from "uuid";
+import bcrypt from "bcryptjs";
+import { users } from "./users.js";
 
 const PORT = process.env.PORT || 3000;
 const TOKEN_TTL_SECONDS = 15; // cada token/QR dura 15 segundos
 
 // Para este MVP usaremos memoria local en lugar de Redis
 const usedJti = new Map();
+
+const ALLOWED_DOMAINS = (process.env.ALLOWED_EMAIL_DOMAINS || "example.edu")
+  .split(",")
+  .map((d) => d.trim())
+  .filter(Boolean);
+const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 
 const app = express();
 app.use(cors());
@@ -32,16 +40,65 @@ app.get("/.well-known/jwks.json", (req, res) => {
   res.json({ keys: [publicJwk] });
 });
 
-// Middleware ficticio de autenticación
-function requireStudent(req, res, next) {
-  req.user = { studentId: "student_12345", deviceId: "demo-device" };
-  next();
+// Endpoint de login básico
+app.post("/auth/login", async (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password)
+    return res.status(400).json({ error: "missing_credentials" });
+  const domain = email.split("@")[1];
+  if (ALLOWED_DOMAINS.length && !ALLOWED_DOMAINS.includes(domain)) {
+    return res.status(403).json({ error: "domain_not_allowed" });
+  }
+  const user = users.find((u) => u.email === email);
+  if (!user) return res.status(401).json({ error: "invalid_credentials" });
+  const ok = await bcrypt.compare(password, user.passwordHash);
+  if (!ok) return res.status(401).json({ error: "invalid_credentials" });
+
+  const token = await new SignJWT({ role: user.role })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuedAt()
+    .setExpirationTime("1h")
+    .setIssuer("api_carnet")
+    .setSubject(user.code)
+    .sign(new TextEncoder().encode(JWT_SECRET));
+
+  res.json({
+    token,
+    user: {
+      code: user.code,
+      email: user.email,
+      role: user.role,
+      name: user.name,
+    },
+  });
+});
+
+function requireAuth(role) {
+  return async (req, res, next) => {
+    try {
+      const auth = req.headers.authorization || "";
+      const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+      if (!token) return res.status(401).json({ error: "missing_token" });
+      const { payload } = await jwtVerify(
+        token,
+        new TextEncoder().encode(JWT_SECRET),
+        { issuer: "api_carnet" }
+      );
+      if (role && payload.role !== role)
+        return res.status(403).json({ error: "forbidden" });
+      req.user = { code: payload.sub, role: payload.role };
+      next();
+    } catch (e) {
+      return res.status(401).json({ error: "invalid_token" });
+    }
+  };
 }
 
 // Endpoint que emite un QR efímero
-app.post("/issue-ephemeral", requireStudent, async (req, res) => {
+app.post("/issue-ephemeral", requireAuth("student"), async (req, res) => {
   try {
-    const { studentId, deviceId } = req.user;
+    const { code } = req.user;
+    const deviceId = req.body?.deviceId || "demo-device";
     const jti = uuidv4();
     const now = Math.floor(Date.now() / 1000);
     const exp = now + TOKEN_TTL_SECONDS;
@@ -55,7 +112,7 @@ app.post("/issue-ephemeral", requireStudent, async (req, res) => {
       .setExpirationTime(exp)
       .setIssuer("http://localhost:" + PORT)
       .setAudience("gate_verifier")
-      .setSubject(studentId)
+      .setSubject(code)
       .setJti(jti)
       .sign(privateKey);
 
@@ -63,8 +120,9 @@ app.post("/issue-ephemeral", requireStudent, async (req, res) => {
     setTimeout(() => usedJti.delete(jti), TOKEN_TTL_SECONDS * 1000 + 2000);
 
     const qrUrl = `http://localhost:${PORT}/verify?t=${encodeURIComponent(token)}`;
+    const student = users.find((u) => u.code === code);
 
-    res.json({ token, qrUrl, ttl: TOKEN_TTL_SECONDS });
+    res.json({ token, qrUrl, ttl: TOKEN_TTL_SECONDS, student });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "issue_failed" });
@@ -99,7 +157,7 @@ app.post("/verify", async (req, res) => {
 
     usedJti.set(jti, true);
 
-    const student = { id: payload.sub, name: "María Pérez", program: "Ingeniería", status: "ACTIVO" };
+    const student = users.find((u) => u.code === payload.sub);
 
     return res.json({
       valid: true,
