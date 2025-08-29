@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_theme.dart';
+import 'api_config.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -16,7 +17,8 @@ class _LoginPageState extends State<LoginPage> {
   final _passController = TextEditingController();
   bool _loading = false;
   String? _error;
-  final String _baseUrl = "http://10.0.2.2:3000";
+  // Base URL now resolves per-platform (web/desktop: localhost, Android emulator: 10.0.2.2)
+  final String _baseUrl = ApiConfig.baseUrl;
 
   @override
   void initState() {
@@ -45,14 +47,16 @@ class _LoginPageState extends State<LoginPage> {
       _error = null;
     });
     try {
-      final resp = await http.post(
+      final resp = await http
+          .post(
         Uri.parse("$_baseUrl/auth/login"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "email": _emailController.text,
           "password": _passController.text,
         }),
-      );
+      )
+          .timeout(const Duration(seconds: 5));
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final prefs = await SharedPreferences.getInstance();
@@ -93,11 +97,13 @@ class _LoginPageState extends State<LoginPage> {
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             TextField(
               controller: _emailController,
               decoration: const InputDecoration(labelText: 'Email'),
             ),
+            const SizedBox(height: 15),
             TextField(
               controller: _passController,
               decoration: const InputDecoration(labelText: 'Password'),

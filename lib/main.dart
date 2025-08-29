@@ -9,6 +9,7 @@ import 'teacher_page.dart';
 import 'student_checkin_scanner.dart';
 import 'porter_page.dart';
 import 'app_theme.dart';
+import 'api_config.dart';
 
 void main() {
   runApp(ThemeController(child: const App()));
@@ -44,7 +45,7 @@ class CarnetPage extends StatefulWidget {
 }
 
 class _CarnetPageState extends State<CarnetPage> {
-  final String _baseUrl = "http://10.0.2.2:3000"; // backend local en emulador
+  final String _baseUrl = ApiConfig.baseUrl; // backend por plataforma
 
   String? _qrUrl;
   int _secondsLeft = 0;

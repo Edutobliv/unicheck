@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'app_theme.dart';
+import 'api_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PorterPage extends StatefulWidget {
@@ -14,7 +15,7 @@ class PorterPage extends StatefulWidget {
 }
 
 class _PorterPageState extends State<PorterPage> {
-  final String _baseUrl = "http://10.0.2.2:3000";
+  final String _baseUrl = ApiConfig.baseUrl;
   final MobileScannerController _controller = MobileScannerController();
   bool _locked = false;
   Map<String, dynamic>? _result; // { valid: bool, student: {...}, reason: string }
@@ -223,7 +224,7 @@ class _PorterPageState extends State<PorterPage> {
 
 class _ResultCard extends StatelessWidget {
   final Map<String, dynamic> result;
-  const _ResultCard({Key? key, required this.result}) : super(key: key);
+  const _ResultCard({super.key, required this.result});
 
   @override
   Widget build(BuildContext context) {
