@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_theme.dart';
@@ -31,6 +32,19 @@ class _LoginPageState extends State<LoginPage> {
     final token = prefs.getString('token');
     final role = prefs.getString('role');
     if (token != null && role != null) {
+      // En web permitimos acceso solo a profesores
+      if (kIsWeb && role != 'teacher') {
+        await prefs.remove('token');
+        await prefs.remove('role');
+        await prefs.remove('name');
+        await prefs.remove('code');
+        if (mounted) {
+          setState(() {
+            _error = 'Acceso web solo para profesores. Por favor ingresa desde tu celular vinculado.';
+          });
+        }
+        return;
+      }
       if (!mounted) return;
       String route;
       if (role == 'teacher') {
@@ -65,6 +79,22 @@ class _LoginPageState extends State<LoginPage> {
         await prefs.setString('role', user['role'] as String);
         await prefs.setString('code', user['code'] as String);
         await prefs.setString('name', user['name'] as String);
+        // En web, solo profesores pueden continuar
+        final role = user['role'] as String?;
+        if (kIsWeb && role != 'teacher') {
+          await prefs.remove('token');
+          await prefs.remove('role');
+          await prefs.remove('name');
+          await prefs.remove('code');
+          if (mounted) {
+            setState(() {
+              _error = role == 'porter'
+                  ? 'El panel de portería no está disponible en la web. Usa el celular vinculado a tu cuenta.'
+                  : 'El acceso de estudiante no está disponible en la web. Ingresa desde tu celular vinculado.';
+            });
+          }
+          return;
+        }
         if (!mounted) return;
         String route;
         if (user['role'] == 'teacher') {

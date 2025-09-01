@@ -215,7 +215,8 @@ class _TeacherPageState extends State<TeacherPage> {
                           child: QrImageView(
                             data: _qrText!,
                             version: QrVersions.auto,
-                            size: 220,
+                            size: 300,
+                            errorCorrectionLevel: QrErrorCorrectLevel.M,
                             backgroundColor: Colors.white,
                           ),
                         ),

@@ -1,6 +1,7 @@
 ﻿import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'app_theme.dart';
 import 'api_config.dart';
@@ -27,6 +28,15 @@ class _StudentCheckInScannerState extends State<StudentCheckInScanner> {
     String token;
     if (raw.startsWith('ATTEND:')) {
       token = raw.substring('ATTEND:'.length);
+    } else if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      // También aceptamos URL con query param ?t=
+      try {
+        final uri = Uri.parse(raw);
+        final t = uri.queryParameters['t'];
+        token = (t != null && t.isNotEmpty) ? t : raw;
+      } catch (_) {
+        token = raw;
+      }
     } else {
       // Permitimos pegar el JWT directo en el QR
       token = raw;
@@ -115,10 +125,31 @@ class _StudentCheckInScannerState extends State<StudentCheckInScanner> {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Escanear QR de Asistencia'),
+          actions: const [ThemeToggleButton()],
+        ),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('El escaneo de asistencia no está disponible en la web.\nPor favor usa el celular vinculado a tu cuenta.'),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Escanear QR de Asistencia'),
-        actions: const [ThemeToggleButton()],
+        actions: [
+          IconButton(
+            tooltip: 'Linterna',
+            onPressed: () => _controller.toggleTorch(),
+            icon: const Icon(Icons.flash_on),
+          ),
+          const ThemeToggleButton(),
+        ],
       ),
       body: Stack(
         children: [

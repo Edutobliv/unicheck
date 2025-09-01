@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -65,7 +66,9 @@ class _CarnetPageState extends State<CarnetPage> {
   @override
   void initState() {
     super.initState();
-    _fetchQr();
+    if (!kIsWeb) {
+      _fetchQr();
+    }
   }
 
   Future<void> _fetchQr() async {
@@ -134,6 +137,21 @@ class _CarnetPageState extends State<CarnetPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text("Carnet Digital"),
+          actions: const [ThemeToggleButton()],
+        ),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('El carnet digital está disponible solo en la app móvil.\nPor favor ingresa desde tu celular vinculado.'),
+          ),
+        ),
+      );
+    }
+
     final s = _student;
 
     return Scaffold(

@@ -166,7 +166,6 @@ class _ThemeControllerState extends State<ThemeController> {
       case ThemeMode.light:
         return 'light';
       case ThemeMode.system:
-      default:
         return 'system';
     }
   }
@@ -208,7 +207,6 @@ class ThemeToggleButton extends StatelessWidget {
         case ThemeMode.light:
           return 'Modo: claro (toca: oscuro, mantén: sistema)';
         case ThemeMode.system:
-        default:
           return 'Modo: sistema (toca: oscuro)';
       }
     }();
