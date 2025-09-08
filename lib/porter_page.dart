@@ -17,7 +17,8 @@ class _PorterPageState extends State<PorterPage> {
   final String _baseUrl = "http://10.0.2.2:3000";
   final MobileScannerController _controller = MobileScannerController();
   bool _locked = false;
-  Map<String, dynamic>? _result; // { valid: bool, student: {...}, reason: string }
+  Map<String, dynamic>?
+  _result; // { valid: bool, student: {...}, reason: string }
   String? _porterName;
   bool _scanning = true;
   Timer? _expTimer;
@@ -78,7 +79,11 @@ class _PorterPageState extends State<PorterPage> {
       final parts = token.split('.');
       if (parts.length < 2) return;
       final payloadJson = utf8.decode(base64Url.normalize(parts[1]).codeUnits);
-      final payloadMap = jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1])))) as Map<String, dynamic>;
+      final payloadMap =
+          jsonDecode(
+                utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+              )
+              as Map<String, dynamic>;
       final exp = (payloadMap['exp'] as num?)?.toInt();
       if (exp == null) return;
       _expEpoch = exp;
@@ -126,7 +131,7 @@ class _PorterPageState extends State<PorterPage> {
           'Content-Type': 'application/json',
           if (auth != null) 'Authorization': 'Bearer $auth',
         },
-        body: jsonEncode({ 'token': token }),
+        body: jsonEncode({'token': token}),
       );
       if (!mounted) return;
       Map<String, dynamic> body;
@@ -137,17 +142,17 @@ class _PorterPageState extends State<PorterPage> {
       }
       if (resp.statusCode == 200 && (body['valid'] == true)) {
         setState(() {
-          _result = { 'valid': true, 'student': body['student'] };
+          _result = {'valid': true, 'student': body['student']};
         });
       } else {
         setState(() {
-          _result = { 'valid': false, 'reason': body['reason'] ?? 'invalid' };
+          _result = {'valid': false, 'reason': body['reason'] ?? 'invalid'};
         });
       }
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _result = { 'valid': false, 'reason': 'network_error' };
+        _result = {'valid': false, 'reason': 'network_error'};
       });
     }
   }
@@ -178,7 +183,10 @@ class _PorterPageState extends State<PorterPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Usuario: ${_porterName ?? ''} • Rol: Portero', style: const TextStyle(fontWeight: FontWeight.w600)),
+            Text(
+              'Usuario: ${_porterName ?? ''} • Rol: Portero',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 12),
             if (res != null) ...[
               AnimatedSwitcher(
@@ -186,15 +194,30 @@ class _PorterPageState extends State<PorterPage> {
                 transitionBuilder: (child, anim) => FadeTransition(
                   opacity: anim,
                   child: SlideTransition(
-                    position: Tween<Offset>(begin: const Offset(0, .05), end: Offset.zero)
-                        .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                    position:
+                        Tween<Offset>(
+                          begin: const Offset(0, .05),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(
+                            parent: anim,
+                            curve: Curves.easeOutCubic,
+                          ),
+                        ),
                     child: child,
                   ),
                 ),
-                child: _ResultCard(key: ValueKey(res['valid'] == true), result: res),
+                child: _ResultCard(
+                  key: ValueKey(res['valid'] == true),
+                  result: res,
+                ),
               ),
               const SizedBox(height: 8),
-              if (_secondsLeft > 0) _ExpiryIndicator(secondsLeft: _secondsLeft, initial: _initialSeconds),
+              if (_secondsLeft > 0)
+                _ExpiryIndicator(
+                  secondsLeft: _secondsLeft,
+                  initial: _initialSeconds,
+                ),
               const SizedBox(height: 12),
               ElevatedButton.icon(
                 onPressed: _reset,
@@ -210,8 +233,14 @@ class _PorterPageState extends State<PorterPage> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: _scanning
-                    ? MobileScanner(controller: _controller, onDetect: _onDetect)
-                    : Container(color: Colors.black12, child: const Center(child: Text('Cámara pausada'))),
+                    ? MobileScanner(
+                        controller: _controller,
+                        onDetect: _onDetect,
+                      )
+                    : Container(
+                        color: Colors.black12,
+                        child: const Center(child: Text('Cámara pausada')),
+                      ),
               ),
             ),
           ],
@@ -223,7 +252,7 @@ class _PorterPageState extends State<PorterPage> {
 
 class _ResultCard extends StatelessWidget {
   final Map<String, dynamic> result;
-  const _ResultCard({Key? key, required this.result}) : super(key: key);
+  const _ResultCard({super.key, required this.result});
 
   @override
   Widget build(BuildContext context) {
@@ -251,7 +280,14 @@ class _ResultCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 6),
                 Text(subtitle),
               ],
@@ -275,8 +311,8 @@ class _ExpiryIndicator extends StatelessWidget {
     final color = secondsLeft > total * 0.5
         ? Colors.green
         : secondsLeft > total * 0.2
-            ? Colors.orange
-            : Colors.red;
+        ? Colors.orange
+        : Colors.red;
     return Row(
       children: [
         SizedBox(
@@ -289,7 +325,10 @@ class _ExpiryIndicator extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        Text('Tiempo restante: ${secondsLeft}s', style: TextStyle(color: color)),
+        Text(
+          'Tiempo restante: ${secondsLeft}s',
+          style: TextStyle(color: color),
+        ),
       ],
     );
   }
