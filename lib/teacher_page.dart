@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_theme.dart';
+import 'api_config.dart';
 
 class TeacherPage extends StatefulWidget {
   const TeacherPage({super.key});
@@ -14,7 +15,7 @@ class TeacherPage extends StatefulWidget {
 }
 
 class _TeacherPageState extends State<TeacherPage> {
-  final String _baseUrl = "http://10.0.2.2:3000";
+  final String _baseUrl = ApiConfig.baseUrl;
   final _durationController = TextEditingController(text: '10'); // minutos
   String? _sessionId;
   String? _qrText;
@@ -214,7 +215,9 @@ class _TeacherPageState extends State<TeacherPage> {
                           child: QrImageView(
                             data: _qrText!,
                             version: QrVersions.auto,
-                            size: 220,
+                            size: 300,
+                            errorCorrectionLevel: QrErrorCorrectLevel.M,
+                            backgroundColor: Colors.white,
                           ),
                         ),
                       ),

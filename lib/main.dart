@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +10,7 @@ import 'teacher_page.dart';
 import 'student_checkin_scanner.dart';
 import 'porter_page.dart';
 import 'app_theme.dart';
+import 'api_config.dart';
 
 void main() {
   runApp(ThemeController(child: const App()));
@@ -44,7 +46,7 @@ class CarnetPage extends StatefulWidget {
 }
 
 class _CarnetPageState extends State<CarnetPage> {
-  final String _baseUrl = "http://10.0.2.2:3000"; // backend local en emulador
+  final String _baseUrl = ApiConfig.baseUrl; // backend por plataforma
 
   String? _qrUrl;
   int _secondsLeft = 0;
@@ -64,7 +66,9 @@ class _CarnetPageState extends State<CarnetPage> {
   @override
   void initState() {
     super.initState();
-    _fetchQr();
+    if (!kIsWeb) {
+      _fetchQr();
+    }
   }
 
   Future<void> _fetchQr() async {
@@ -133,6 +137,21 @@ class _CarnetPageState extends State<CarnetPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text("Carnet Digital"),
+          actions: const [ThemeToggleButton()],
+        ),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('El carnet digital está disponible solo en la app móvil.\nPor favor ingresa desde tu celular vinculado.'),
+          ),
+        ),
+      );
+    }
+
     final s = _student;
 
     return Scaffold(

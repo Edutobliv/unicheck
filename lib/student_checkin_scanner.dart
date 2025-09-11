@@ -1,8 +1,10 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'app_theme.dart';
+import 'api_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class StudentCheckInScanner extends StatefulWidget {
@@ -13,8 +15,9 @@ class StudentCheckInScanner extends StatefulWidget {
 }
 
 class _StudentCheckInScannerState extends State<StudentCheckInScanner> {
-  final String _baseUrl = "http://10.0.2.2:3000";
+  final String _baseUrl = ApiConfig.baseUrl;
   bool _handled = false;
+  final MobileScannerController _controller = MobileScannerController();
 
   Future<void> _handleBarcode(BarcodeCapture capture) async {
     if (_handled) return;
@@ -25,6 +28,15 @@ class _StudentCheckInScannerState extends State<StudentCheckInScanner> {
     String token;
     if (raw.startsWith('ATTEND:')) {
       token = raw.substring('ATTEND:'.length);
+    } else if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      // También aceptamos URL con query param ?t=
+      try {
+        final uri = Uri.parse(raw);
+        final t = uri.queryParameters['t'];
+        token = (t != null && t.isNotEmpty) ? t : raw;
+      } catch (_) {
+        token = raw;
+      }
     } else {
       // Permitimos pegar el JWT directo en el QR
       token = raw;
@@ -106,25 +118,61 @@ class _StudentCheckInScannerState extends State<StudentCheckInScanner> {
   }
 
   @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Escanear QR de Asistencia'),
+          actions: const [ThemeToggleButton()],
+        ),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('El escaneo de asistencia no está disponible en la web.\nPor favor usa el celular vinculado a tu cuenta.'),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Escanear QR de Asistencia'),
-        actions: const [ThemeToggleButton()],
+        actions: [
+          IconButton(
+            tooltip: 'Linterna',
+            onPressed: () => _controller.toggleTorch(),
+            icon: const Icon(Icons.flash_on),
+          ),
+          const ThemeToggleButton(),
+        ],
       ),
       body: Stack(
         children: [
-          const Positioned.fill(child: ColoredBox(color: Colors.black)),
           Positioned.fill(
-            child: Opacity(
-              opacity: 0.85,
-              child: MobileScanner(onDetect: _handleBarcode),
+            child: MobileScanner(
+              controller: _controller,
+              fit: BoxFit.cover,
+              onDetect: _handleBarcode,
+              errorBuilder: (context, error, child) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'No se pudo abrir la cámara.\nVerifica permisos y que no esté en uso.\n\n$error',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
             ),
           ),
-          // Overlay con recorte para guía de escaneo
-          Positioned.fill(
+          // Overlay guía de escaneo (marco)
+          const Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(painter: _ScannerOverlayPainter(color: Colors.white.withOpacity(0.85))),
+              child: CustomPaint(painter: _ScannerOverlayPainter()),
             ),
           ),
         ],
@@ -134,38 +182,24 @@ class _StudentCheckInScannerState extends State<StudentCheckInScanner> {
 }
 
 class _ScannerOverlayPainter extends CustomPainter {
-  final Color color;
-  _ScannerOverlayPainter({required this.color});
+  const _ScannerOverlayPainter();
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
-    final cutRect = Rect.fromCenter(
+    final rect = Rect.fromCenter(
       center: Offset(size.width / 2, size.height / 2),
       width: size.width * 0.7,
       height: size.width * 0.7,
     );
-    final rrect = RRect.fromRectAndRadius(cutRect, const Radius.circular(16));
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(16));
 
-    // Fondo oscuro
-    canvas.drawRect(Offset.zero & size, paint);
-
-    // Recorte del centro
-    final clearPaint = Paint()
-      ..blendMode = BlendMode.clear;
-    canvas.saveLayer(Offset.zero & size, Paint());
-    canvas.drawRect(Offset.zero & size, paint);
-    canvas.drawRRect(rrect, clearPaint);
-    canvas.restore();
-
-    // Bordes de guía
-    final guidePaint = Paint()
+    final frame = Paint()
       ..color = Colors.white
       ..strokeWidth = 4
       ..style = PaintingStyle.stroke;
-    canvas.drawRRect(rrect, guidePaint);
+    canvas.drawRRect(rrect, frame);
   }
 
   @override
-  bool shouldRepaint(covariant _ScannerOverlayPainter oldDelegate) => oldDelegate.color != color;
+  bool shouldRepaint(covariant _ScannerOverlayPainter oldDelegate) => false;
 }

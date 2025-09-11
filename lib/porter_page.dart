@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'app_theme.dart';
+import 'api_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PorterPage extends StatefulWidget {
@@ -14,7 +16,7 @@ class PorterPage extends StatefulWidget {
 }
 
 class _PorterPageState extends State<PorterPage> {
-  final String _baseUrl = "http://10.0.2.2:3000";
+  final String _baseUrl = ApiConfig.baseUrl;
   final MobileScannerController _controller = MobileScannerController();
   bool _locked = false;
   Map<String, dynamic>?
@@ -169,6 +171,22 @@ class _PorterPageState extends State<PorterPage> {
 
   @override
   Widget build(BuildContext context) {
+    // En web, mostrar mensaje y no intentar usar cámara
+    if (kIsWeb) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Panel del Portero'),
+          actions: const [ThemeToggleButton()],
+        ),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('El panel de portería no está disponible en la web.\nPor favor usa el celular vinculado a tu cuenta.'),
+          ),
+        ),
+      );
+    }
+
     final res = _result;
     return Scaffold(
       appBar: AppBar(
