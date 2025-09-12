@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
@@ -11,6 +12,7 @@ import 'student_checkin_scanner.dart';
 import 'porter_page.dart';
 import 'app_theme.dart';
 import 'api_config.dart';
+import 'register_page.dart';
 
 void main() {
   runApp(ThemeController(child: const App()));
@@ -33,6 +35,7 @@ class App extends StatelessWidget {
         '/teacher': (_) => const TeacherPage(),
         '/porter': (_) => const PorterPage(),
         '/scan-checkin': (_) => const StudentCheckInScanner(),
+        '/register': (_) => const RegisterPage(),
       },
       home: const LoginPage(),
     );
@@ -66,6 +69,7 @@ class _CarnetPageState extends State<CarnetPage> {
   @override
   void initState() {
     super.initState();
+    _loadLocalStudent();
     if (!kIsWeb) {
       _fetchQr();
     }
@@ -76,7 +80,6 @@ class _CarnetPageState extends State<CarnetPage> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
       if (token == null) {
-        if (mounted) Navigator.of(context).pushReplacementNamed('/login');
         return;
       }
       final resp = await http.post(
@@ -101,6 +104,30 @@ class _CarnetPageState extends State<CarnetPage> {
       _toast("Error de red: $e");
     }
   }
+
+  Future<void> _loadLocalStudent() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonStr = prefs.getString('local_user');
+    if (jsonStr != null) {
+      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+      final photoB64 = data['photo'] as String?;
+      if (photoB64 != null) {
+        data['photoBytes'] = base64Decode(photoB64);
+      }
+      setState(() {
+        _student = data;
+      });
+    }
+  }
+
+  String _formatExpiry(String? iso) {
+    if (iso == null) return 'N/A';
+    final d = DateTime.tryParse(iso);
+    if (d == null) return 'N/A';
+    final day = d.day.toString().padLeft(2, '0');
+    final month = d.month.toString().padLeft(2, '0');
+    return '$day/$month/${d.year}';
+    }
 
   void _startCountdown() {
     _timer?.cancel();
@@ -205,6 +232,7 @@ class _CarnetPageState extends State<CarnetPage> {
                           child: _FotoBox(
                             photoAssetPath: "assets/img/foto_carnet.png",
                             photoUrl: s?["photoUrl"],
+                            photoBytes: s?["photoBytes"],
                             width: 160,
                             height: 200,
                           ),
@@ -257,10 +285,10 @@ class _CarnetPageState extends State<CarnetPage> {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          "30/06/2025",
-                          style: TextStyle(
+                          _formatExpiry(s?["expiryDate"] as String?),
+                          style: const TextStyle(
                             color: grisTexto,
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -392,6 +420,7 @@ class _Label extends StatelessWidget {
 
 class _FotoBox extends StatelessWidget {
   final String? photoUrl; // si en el futuro viene del backend
+  final Uint8List? photoBytes; // foto local almacenada
   final String photoAssetPath; // fallback local
   final double width;
   final double height;
@@ -399,15 +428,21 @@ class _FotoBox extends StatelessWidget {
   const _FotoBox({
     required this.photoAssetPath,
     this.photoUrl,
+    this.photoBytes,
     this.width = 150,
     this.height = 175,
   });
 
   @override
   Widget build(BuildContext context) {
-    final img = (photoUrl != null && photoUrl!.isNotEmpty)
-        ? Image.network(photoUrl!, fit: BoxFit.cover)
-        : Image.asset(photoAssetPath, fit: BoxFit.cover);
+    Widget img;
+    if (photoBytes != null) {
+      img = Image.memory(photoBytes!, fit: BoxFit.cover);
+    } else if (photoUrl != null && photoUrl!.isNotEmpty) {
+      img = Image.network(photoUrl!, fit: BoxFit.cover);
+    } else {
+      img = Image.asset(photoAssetPath, fit: BoxFit.cover);
+    }
 
     return Container(
       width: width,
@@ -443,7 +478,7 @@ class _QrGrande extends StatelessWidget {
         ],
       ),
       child: qrUrl == null
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: Text('Sin QR'))
           : AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
               transitionBuilder: (child, anim) => FadeTransition(

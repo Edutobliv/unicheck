@@ -61,6 +61,21 @@ class _LoginPageState extends State<LoginPage> {
       _error = null;
     });
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final localJson = prefs.getString('local_user');
+      if (localJson != null) {
+        final localUser = jsonDecode(localJson) as Map<String, dynamic>;
+        if (localUser['email'] == _emailController.text &&
+            localUser['password'] == _passController.text) {
+          await prefs.setString('role', 'student');
+          await prefs.setString('code', localUser['id'] as String);
+          await prefs.setString('name', localUser['name'] as String);
+          if (!mounted) return;
+          Navigator.of(context).pushReplacementNamed('/carnet');
+          return;
+        }
+      }
+
       final resp = await http
           .post(
         Uri.parse("$_baseUrl/auth/login"),
@@ -151,6 +166,10 @@ class _LoginPageState extends State<LoginPage> {
                     ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
                     : const Text('Ingresar'),
               ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pushNamed('/register'),
+              child: const Text('Crear cuenta'),
             ),
           ],
         ),
