@@ -21,7 +21,11 @@ class _RegisterPageState extends State<RegisterPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _programController = TextEditingController();
+ codex/fix-student-account-registration-process-89igdg
+  final _roleController = TextEditingController(text: 'estudiante');
+
   final _roleController = TextEditingController(text: 'student');
+ main
   DateTime? _expiryDate;
   Uint8List? _photoBytes;
 
@@ -68,7 +72,12 @@ class _RegisterPageState extends State<RegisterPage> {
         'password': _passwordController.text,
         'program': _programController.text,
         'expiresAt': expiry,
+ codex/fix-student-account-registration-process-89igdg
+        // Always register students with the expected backend role key
+        'role': 'student',
+
         'role': _roleController.text,
+ main
         'photo': _photoBytes != null ? 'data:image/png;base64,' + base64Encode(_photoBytes!) : null,
       }),
     )
@@ -76,6 +85,10 @@ class _RegisterPageState extends State<RegisterPage> {
       Navigator.of(context).pop();
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
+ codex/fix-student-account-registration-process-89igdg
+        final user = (data['user'] as Map?)?.cast<String, dynamic>();
+
+ main
         showDialog(
           context: context,
           builder: (_) => AlertDialog(
@@ -85,6 +98,13 @@ class _RegisterPageState extends State<RegisterPage> {
               children: [
                 if (_photoBytes != null)
                   Image.memory(_photoBytes!, width: 120, height: 120, fit: BoxFit.cover),
+codex/fix-student-account-registration-process-89igdg
+                if (user != null) ...[
+                  const SizedBox(height: 8),
+                  Text(user['name'] ?? ''),
+                ],
+
+           main
                 const SizedBox(height: 12),
                 Text('Código efímero: ${data['ephemeralCode']}'),
               ],
