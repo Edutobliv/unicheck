@@ -11,6 +11,7 @@ import 'student_checkin_scanner.dart';
 import 'porter_page.dart';
 import 'app_theme.dart';
 import 'api_config.dart';
+import 'register_page.dart';
 
 void main() {
   runApp(ThemeController(child: const App()));
@@ -33,6 +34,7 @@ class App extends StatelessWidget {
         '/teacher': (_) => const TeacherPage(),
         '/porter': (_) => const PorterPage(),
         '/scan-checkin': (_) => const StudentCheckInScanner(),
+        '/register': (_) => const RegisterPage(),
       },
       home: const LoginPage(),
     );
