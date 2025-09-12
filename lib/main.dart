@@ -104,6 +104,8 @@ class _CarnetPageState extends State<CarnetPage> {
           "Content-Type": "application/json",
           "Authorization": "Bearer $token",
         },
+        // Enviar un JSON vacío para evitar errores del body parser del backend
+        body: jsonEncode({}),
       );
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
