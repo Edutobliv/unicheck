@@ -73,8 +73,40 @@ app.post("/auth/login", async (req, res) => {
       email: user.email,
       role: user.role,
       name: user.name,
+      program: user.program,
+      expiresAt: user.expiresAt,
     },
   });
+});
+
+// Registro de nuevos estudiantes
+app.post("/auth/register", async (req, res) => {
+  try {
+    const { code, email, name, password, program, expiresAt, role, photo } = req.body || {};
+    if (!code || !email || !name || !password) {
+      return res.status(400).json({ error: "missing_fields" });
+    }
+    const exists = users.some((u) => u.email === email || u.code === code);
+    if (exists) {
+      return res.status(409).json({ error: "user_exists" });
+    }
+    const passwordHash = await bcrypt.hash(password, 10);
+    const newUser = {
+      code,
+      email,
+      name,
+      role: role || "student",
+      program,
+      expiresAt,
+      photoUrl: photo || null,
+      passwordHash,
+    };
+    users.push(newUser);
+    const ephemeralCode = uuidv4();
+    res.json({ success: true, ephemeralCode });
+  } catch (e) {
+    res.status(500).json({ error: "registration_failed" });
+  }
 });
 
 function requireAuth(role) {
@@ -124,7 +156,8 @@ app.post("/issue-ephemeral", requireAuth("student"), async (req, res) => {
     setTimeout(() => usedJti.delete(jti), TOKEN_TTL_SECONDS * 1000 + 2000);
 
     const qrUrl = `http://localhost:${PORT}/verify?t=${encodeURIComponent(token)}`;
-    const student = users.find((u) => u.code === code);
+    const found = users.find((u) => u.code === code);
+    const { passwordHash: _ph, ...student } = found || {};
 
     res.json({ token, qrUrl, ttl: TOKEN_TTL_SECONDS, student });
   } catch (e) {
