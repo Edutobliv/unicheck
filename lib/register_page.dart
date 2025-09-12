@@ -68,6 +68,7 @@ class _RegisterPageState extends State<RegisterPage> {
         'password': _passwordController.text,
         'program': _programController.text,
         'expiresAt': expiry,
+        // Always register students with the expected backend role key
         'role': 'student',
         'photo': _photoBytes != null ? 'data:image/png;base64,' + base64Encode(_photoBytes!) : null,
       }),

@@ -102,6 +102,7 @@ app.post("/auth/register", async (req, res) => {
       passwordHash,
     };
     users.push(newUser);
+    // Persist the new account so it can log in later
     saveUsers();
     const ephemeralCode = uuidv4();
     res.json({ success: true, ephemeralCode });
