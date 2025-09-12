@@ -73,8 +73,32 @@ app.post("/auth/login", async (req, res) => {
       email: user.email,
       role: user.role,
       name: user.name,
+      program: user.program,
+      expiryDate: user.expiryDate,
+      photo: user.photo,
     },
   });
+});
+
+app.post("/auth/register", async (req, res) => {
+  const { code, name, email, password, program, expiryDate, photo } = req.body || {};
+  if (!code || !name || !email || !password) {
+    return res.status(400).json({ error: "missing_fields" });
+  }
+  const exists = users.find((u) => u.email === email);
+  if (exists) return res.status(409).json({ error: "user_exists" });
+  const passwordHash = await bcrypt.hash(password, 10);
+  users.push({
+    code,
+    name,
+    email,
+    program,
+    expiryDate,
+    photo,
+    role: "student",
+    passwordHash,
+  });
+  res.json({ ok: true });
 });
 
 function requireAuth(role) {

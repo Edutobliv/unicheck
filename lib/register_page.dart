@@ -1,10 +1,12 @@
 import 'dart:typed_data';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:http/http.dart' as http;
 
 import 'app_theme.dart';
+import 'api_config.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -44,10 +46,48 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
-  void _submit() {
-    // TODO: connect with backend
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Registro no implementado')));
+  Future<void> _submit() async {
+    if (_nameController.text.isEmpty ||
+        _emailController.text.isEmpty ||
+        _passwordController.text.isEmpty ||
+        _programController.text.isEmpty ||
+        _photoBytes == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Por favor completa todos los campos')));
+      return;
+    }
+
+    final id = (DateTime.now().millisecondsSinceEpoch % 1000000).toString().padLeft(6, '0');
+    final expiry = _expiryDate != null
+        ? '${_expiryDate!.day.toString().padLeft(2, '0')}/${_expiryDate!.month.toString().padLeft(2, '0')}/${_expiryDate!.year}'
+        : null;
+    try {
+      final resp = await http.post(
+        Uri.parse("${ApiConfig.baseUrl}/auth/register"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          'code': id,
+          'name': _nameController.text,
+          'email': _emailController.text,
+          'password': _passwordController.text,
+          'program': _programController.text,
+          'expiryDate': expiry,
+          'photo': base64Encode(_photoBytes!),
+        }),
+      );
+      if (resp.statusCode == 200) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Usuario registrado exitosamente')));
+        Navigator.of(context).pop();
+      } else {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Error al registrar')));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Error de conexión')));
+    }
   }
 
   @override
