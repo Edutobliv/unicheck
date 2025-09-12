@@ -47,6 +47,16 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _submit() async {
+    if (_nameController.text.isEmpty ||
+        _emailController.text.isEmpty ||
+        _passwordController.text.isEmpty ||
+        _programController.text.isEmpty ||
+        _photoBytes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Completa todos los campos y la foto.')));
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final id = DateTime.now().millisecondsSinceEpoch.toString();
     final user = {
@@ -57,12 +67,12 @@ class _RegisterPageState extends State<RegisterPage> {
       'program': _programController.text,
       'expiryDate': (_expiryDate ?? DateTime.now().add(const Duration(days: 365)))
           .toIso8601String(),
-      'photo': _photoBytes != null ? base64Encode(_photoBytes!) : null,
+      'photo': base64Encode(_photoBytes!),
     };
     await prefs.setString('local_user', jsonEncode(user));
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Cuenta registrada. Inicia sesión.')));
+    ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cuenta registrada. Inicia sesión.')));
     Navigator.of(context).pushReplacementNamed('/login');
   }
 
