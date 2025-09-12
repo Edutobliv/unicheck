@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
@@ -68,9 +70,23 @@ class _CarnetPageState extends State<CarnetPage> {
   @override
   void initState() {
     super.initState();
+    _loadLocalStudent();
     if (!kIsWeb) {
       _fetchQr();
     }
+  }
+
+  Future<void> _loadLocalStudent() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _student = {
+        'id': prefs.getString('id'),
+        'name': prefs.getString('name'),
+        'program': prefs.getString('program'),
+        'expiryDate': prefs.getString('expiryDate'),
+        'photo': prefs.getString('photo'),
+      };
+    });
   }
 
   Future<void> _fetchQr() async {
@@ -78,7 +94,7 @@ class _CarnetPageState extends State<CarnetPage> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
       if (token == null) {
-        if (mounted) Navigator.of(context).pushReplacementNamed('/login');
+        // Modo sin backend: solo mostramos la información almacenada
         return;
       }
       final resp = await http.post(
@@ -133,6 +149,11 @@ class _CarnetPageState extends State<CarnetPage> {
     await prefs.remove('role');
     await prefs.remove('name');
     await prefs.remove('code');
+    await prefs.remove('email');
+    await prefs.remove('program');
+    await prefs.remove('expiryDate');
+    await prefs.remove('photo');
+    await prefs.remove('id');
     if (!mounted) return;
     Navigator.of(context).pushReplacementNamed('/login');
   }
@@ -207,6 +228,9 @@ class _CarnetPageState extends State<CarnetPage> {
                           child: _FotoBox(
                             photoAssetPath: "assets/img/foto_carnet.png",
                             photoUrl: s?["photoUrl"],
+                            photoBytes: s?["photo"] != null
+                                ? base64Decode(s!["photo"] as String)
+                                : null,
                             width: 160,
                             height: 200,
                           ),
@@ -259,10 +283,10 @@ class _CarnetPageState extends State<CarnetPage> {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          "30/06/2025",
-                          style: TextStyle(
+                          s?["expiryDate"] ?? "",
+                          style: const TextStyle(
                             color: grisTexto,
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -394,6 +418,7 @@ class _Label extends StatelessWidget {
 
 class _FotoBox extends StatelessWidget {
   final String? photoUrl; // si en el futuro viene del backend
+  final Uint8List? photoBytes; // foto local almacenada
   final String photoAssetPath; // fallback local
   final double width;
   final double height;
@@ -401,15 +426,18 @@ class _FotoBox extends StatelessWidget {
   const _FotoBox({
     required this.photoAssetPath,
     this.photoUrl,
+    this.photoBytes,
     this.width = 150,
     this.height = 175,
   });
 
   @override
   Widget build(BuildContext context) {
-    final img = (photoUrl != null && photoUrl!.isNotEmpty)
-        ? Image.network(photoUrl!, fit: BoxFit.cover)
-        : Image.asset(photoAssetPath, fit: BoxFit.cover);
+    final img = (photoBytes != null)
+        ? Image.memory(photoBytes!, fit: BoxFit.cover)
+        : (photoUrl != null && photoUrl!.isNotEmpty)
+            ? Image.network(photoUrl!, fit: BoxFit.cover)
+            : Image.asset(photoAssetPath, fit: BoxFit.cover);
 
     return Container(
       width: width,
