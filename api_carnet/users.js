@@ -4,6 +4,9 @@ export const users = [
     email: "alumno1@example.edu",
     name: "Alumno Uno",
     role: "student",
+    program: "INGENIERIA DE SISTEMAS",
+    expiresAt: "30/06/2025",
+    photoUrl: null,
     passwordHash: "$2b$10$kex/FEd9ELMutckwBETx2u2E52FdIKsE8YGvXSw02k6BVZpEvGatS"
   },
   {
