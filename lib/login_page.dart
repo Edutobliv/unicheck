@@ -152,6 +152,10 @@ class _LoginPageState extends State<LoginPage> {
                     : const Text('Ingresar'),
               ),
             ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pushNamed('/register'),
+              child: const Text('Crear cuenta'),
+            ),
           ],
         ),
       ),
