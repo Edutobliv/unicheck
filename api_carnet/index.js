@@ -102,11 +102,16 @@ app.post("/auth/register", async (req, res) => {
       passwordHash,
     };
     users.push(newUser);
+codex/fix-student-account-registration-process-89igdg
     // Persist the new account so it can log in later
     saveUsers();
     const ephemeralCode = uuidv4();
     const { passwordHash: _ph, ...safeUser } = newUser;
     res.json({ success: true, ephemeralCode, user: safeUser });
+
+    const ephemeralCode = uuidv4();
+    res.json({ success: true, ephemeralCode });
+ main
   } catch (e) {
     res.status(500).json({ error: "registration_failed" });
   }
