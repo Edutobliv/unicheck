@@ -5,7 +5,7 @@ import helmet from "helmet";
 import { generateKeyPair, SignJWT, jwtVerify, exportJWK, importJWK } from "jose";
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcryptjs";
-import { users } from "./users.js";
+import { users, saveUsers } from "./users.js";
 
 const PORT = process.env.PORT || 3000;
 const TOKEN_TTL_SECONDS = 15; // cada token/QR dura 15 segundos
@@ -17,7 +17,9 @@ const usedJti = new Map();
 const classSessions = new Map(); // sessionId -> { id, teacherCode, startedAt, expiresAt }
 const attendanceBySession = new Map(); // sessionId -> [ { code, email, name, at } ]
 
-const ALLOWED_DOMAINS = (process.env.ALLOWED_EMAIL_DOMAINS || "example.edu")
+// Permitir cualquier dominio por defecto; si se define ALLOWED_EMAIL_DOMAINS,
+// se restringe a los listados (separados por comas)
+const ALLOWED_DOMAINS = (process.env.ALLOWED_EMAIL_DOMAINS || "")
   .split(",")
   .map((d) => d.trim())
   .filter(Boolean);
@@ -46,14 +48,21 @@ app.get("/.well-known/jwks.json", (req, res) => {
 
 // Endpoint de login básico
 app.post("/auth/login", async (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password)
+  const { email, password, code } = req.body || {};
+  if ((!email && !code) || !password)
     return res.status(400).json({ error: "missing_credentials" });
-  const domain = email.split("@")[1];
-  if (ALLOWED_DOMAINS.length && !ALLOWED_DOMAINS.includes(domain)) {
-    return res.status(403).json({ error: "domain_not_allowed" });
+
+  let user;
+  if (email) {
+    const domain = email.split("@")[1];
+    if (ALLOWED_DOMAINS.length && !ALLOWED_DOMAINS.includes(domain)) {
+      return res.status(403).json({ error: "domain_not_allowed" });
+    }
+    user = users.find((u) => u.email === email);
+  } else {
+    user = users.find((u) => u.code === code);
   }
-  const user = users.find((u) => u.email === email);
+
   if (!user) return res.status(401).json({ error: "invalid_credentials" });
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return res.status(401).json({ error: "invalid_credentials" });
@@ -73,8 +82,46 @@ app.post("/auth/login", async (req, res) => {
       email: user.email,
       role: user.role,
       name: user.name,
+      program: user.program,
+      expiresAt: user.expiresAt,
     },
   });
+});
+
+// Registro de nuevos estudiantes
+app.post("/auth/register", async (req, res) => {
+  try {
+    const { code, email, name, password, program, expiresAt, role, photo } = req.body || {};
+    if (!code || !email || !name || !password) {
+      return res.status(400).json({ error: "missing_fields" });
+    }
+    const exists = users.some((u) => u.email === email || u.code === code);
+    if (exists) {
+      return res.status(409).json({ error: "user_exists" });
+    }
+    const passwordHash = await bcrypt.hash(password, 10);
+    const now = Date.now();
+    const ephemeralCode = uuidv4();
+    const newUser = {
+      code,
+      email,
+      name,
+      role: role || "student",
+      program,
+      expiresAt,
+      photoUrl: photo || null,
+      passwordHash,
+      ephemeralCode,
+      ephemeralExpires: now + TOKEN_TTL_SECONDS * 1000,
+    };
+    users.push(newUser);
+    // Save the new account so it can be used to log in later
+    saveUsers();
+    const { passwordHash: _ph, ...safeUser } = newUser;
+    res.json({ success: true, ephemeralCode, user: safeUser });
+  } catch (e) {
+    res.status(500).json({ error: "registration_failed" });
+  }
 });
 
 function requireAuth(role) {
@@ -124,9 +171,20 @@ app.post("/issue-ephemeral", requireAuth("student"), async (req, res) => {
     setTimeout(() => usedJti.delete(jti), TOKEN_TTL_SECONDS * 1000 + 2000);
 
     const qrUrl = `http://localhost:${PORT}/verify?t=${encodeURIComponent(token)}`;
-    const student = users.find((u) => u.code === code);
+    const found = users.find((u) => u.code === code);
 
-    res.json({ token, qrUrl, ttl: TOKEN_TTL_SECONDS, student });
+    if (found) {
+      const nowMs = Date.now();
+      if (!found.ephemeralCode || !found.ephemeralExpires || nowMs >= found.ephemeralExpires) {
+        found.ephemeralCode = uuidv4();
+        found.ephemeralExpires = nowMs + TOKEN_TTL_SECONDS * 1000;
+        saveUsers();
+      }
+    }
+
+    const { passwordHash: _ph, ...student } = found || {};
+
+    res.json({ token, qrUrl, ttl: TOKEN_TTL_SECONDS, student, ephemeralCode: found?.ephemeralCode });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "issue_failed" });
