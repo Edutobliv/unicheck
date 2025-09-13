@@ -250,7 +250,7 @@ class _CarnetPageState extends State<CarnetPage> {
                     children: [
                       Expanded(
                         child: Text(
-                          s?["id"] ?? "430075236",
+                          s?["code"] ?? s?["id"] ?? "430075236",
                           style: const TextStyle(
                             color: grisTexto,
                             fontSize: 18,
@@ -259,10 +259,10 @@ class _CarnetPageState extends State<CarnetPage> {
                         ),
                       ),
                       const SizedBox(width: 6),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          "30/06/2025",
-                          style: TextStyle(
+                          s?["expiresAt"] ?? "30/06/2025",
+                          style: const TextStyle(
                             color: grisTexto,
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -407,9 +407,17 @@ class _FotoBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final img = (photoUrl != null && photoUrl!.isNotEmpty)
-        ? Image.network(photoUrl!, fit: BoxFit.cover)
-        : Image.asset(photoAssetPath, fit: BoxFit.cover);
+    Image img;
+    if (photoUrl != null && photoUrl!.isNotEmpty) {
+      if (photoUrl!.startsWith('data:image')) {
+        final b64 = photoUrl!.split(',').last;
+        img = Image.memory(base64Decode(b64), fit: BoxFit.cover);
+      } else {
+        img = Image.network(photoUrl!, fit: BoxFit.cover);
+      }
+    } else {
+      img = Image.asset(photoAssetPath, fit: BoxFit.cover);
+    }
 
     return Container(
       width: width,
