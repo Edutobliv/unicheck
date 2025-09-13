@@ -61,14 +61,21 @@ class _LoginPageState extends State<LoginPage> {
       _error = null;
     });
     try {
+      final Map<String, String> payload = _emailController.text.contains('@')
+          ? {
+              "email": _emailController.text,
+              "password": _passController.text,
+            }
+          : {
+              "code": _emailController.text,
+              "password": _passController.text,
+            };
+
       final resp = await http
           .post(
         Uri.parse("$_baseUrl/auth/login"),
         headers: {"Content-Type": "application/json"},
-        body: jsonEncode({
-          "email": _emailController.text,
-          "password": _passController.text,
-        }),
+        body: jsonEncode(payload),
       )
           .timeout(const Duration(seconds: 5));
       if (resp.statusCode == 200) {
@@ -131,7 +138,7 @@ class _LoginPageState extends State<LoginPage> {
           children: [
             TextField(
               controller: _emailController,
-              decoration: const InputDecoration(labelText: 'Email'),
+              decoration: const InputDecoration(labelText: 'Correo o código'),
             ),
             const SizedBox(height: 15),
             TextField(

@@ -54,6 +54,7 @@ class _CarnetPageState extends State<CarnetPage> {
   int _secondsLeft = 0;
   Timer? _timer;
   Map<String, dynamic>? _student;
+  String? _ephemeralCode;
 
   // Colores / estilos
   static const Color rojoMarca = Color(0xFFB0191D);
@@ -94,6 +95,7 @@ class _CarnetPageState extends State<CarnetPage> {
           _qrUrl = data["qrUrl"] as String;
           _secondsLeft = (data["ttl"] as num).toInt();
           _student = (data["student"] as Map?)?.cast<String, dynamic>();
+          _ephemeralCode = data["ephemeralCode"] as String?;
         });
         _startCountdown();
       } else {
@@ -216,7 +218,16 @@ class _CarnetPageState extends State<CarnetPage> {
                       Expanded(
                         child: Align(
                           alignment: Alignment.topCenter,
-                          child: _QrGrande(qrUrl: _qrUrl, size: kQrSize),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _QrGrande(qrUrl: _qrUrl, size: kQrSize),
+                              if (_ephemeralCode != null) ...[
+                                const SizedBox(height: 8),
+                                Text('Código: ' + _ephemeralCode!, style: const TextStyle(fontSize: 12)),
+                              ],
+                            ],
+                          ),
                         ),
                       ),
                     ],

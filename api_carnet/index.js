@@ -17,7 +17,9 @@ const usedJti = new Map();
 const classSessions = new Map(); // sessionId -> { id, teacherCode, startedAt, expiresAt }
 const attendanceBySession = new Map(); // sessionId -> [ { code, email, name, at } ]
 
-const ALLOWED_DOMAINS = (process.env.ALLOWED_EMAIL_DOMAINS || "example.edu")
+// Permitir cualquier dominio por defecto; si se define ALLOWED_EMAIL_DOMAINS,
+// se restringe a los listados (separados por comas)
+const ALLOWED_DOMAINS = (process.env.ALLOWED_EMAIL_DOMAINS || "")
   .split(",")
   .map((d) => d.trim())
   .filter(Boolean);
@@ -46,14 +48,21 @@ app.get("/.well-known/jwks.json", (req, res) => {
 
 // Endpoint de login básico
 app.post("/auth/login", async (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password)
+  const { email, password, code } = req.body || {};
+  if ((!email && !code) || !password)
     return res.status(400).json({ error: "missing_credentials" });
-  const domain = email.split("@")[1];
-  if (ALLOWED_DOMAINS.length && !ALLOWED_DOMAINS.includes(domain)) {
-    return res.status(403).json({ error: "domain_not_allowed" });
+
+  let user;
+  if (email) {
+    const domain = email.split("@")[1];
+    if (ALLOWED_DOMAINS.length && !ALLOWED_DOMAINS.includes(domain)) {
+      return res.status(403).json({ error: "domain_not_allowed" });
+    }
+    user = users.find((u) => u.email === email);
+  } else {
+    user = users.find((u) => u.code === code);
   }
-  const user = users.find((u) => u.email === email);
+
   if (!user) return res.status(401).json({ error: "invalid_credentials" });
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return res.status(401).json({ error: "invalid_credentials" });
@@ -163,7 +172,7 @@ app.post("/issue-ephemeral", requireAuth("student"), async (req, res) => {
     const found = users.find((u) => u.code === code);
     const { passwordHash: _ph, ...student } = found || {};
 
-    res.json({ token, qrUrl, ttl: TOKEN_TTL_SECONDS, student });
+    res.json({ token, qrUrl, ttl: TOKEN_TTL_SECONDS, student, ephemeralCode: found?.ephemeralCode });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "issue_failed" });
@@ -328,3 +337,4 @@ app.get("/prof/session/:id", requireAuth("teacher"), (req, res) => {
 app.listen(PORT, () => {
   console.log("API QR efímero escuchando en http://localhost:" + PORT);
 });
+
