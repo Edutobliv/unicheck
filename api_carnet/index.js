@@ -100,8 +100,6 @@ app.post("/auth/register", async (req, res) => {
       return res.status(409).json({ error: "user_exists" });
     }
     const passwordHash = await bcrypt.hash(password, 10);
-    const now = Date.now();
-    const ephemeralCode = uuidv4();
     const newUser = {
       code,
       email,
@@ -111,12 +109,12 @@ app.post("/auth/register", async (req, res) => {
       expiresAt,
       photoUrl: photo || null,
       passwordHash,
-      ephemeralCode,
-      ephemeralExpires: now + TOKEN_TTL_SECONDS * 1000,
     };
     users.push(newUser);
-    // Save the new account so it can be used to log in later
+    // Persist the new account so it can log in later
     saveUsers();
+
+    const ephemeralCode = uuidv4();
     const { passwordHash: _ph, ...safeUser } = newUser;
     res.json({ success: true, ephemeralCode, user: safeUser });
   } catch (e) {
@@ -172,16 +170,6 @@ app.post("/issue-ephemeral", requireAuth("student"), async (req, res) => {
 
     const qrUrl = `http://localhost:${PORT}/verify?t=${encodeURIComponent(token)}`;
     const found = users.find((u) => u.code === code);
-
-    if (found) {
-      const nowMs = Date.now();
-      if (!found.ephemeralCode || !found.ephemeralExpires || nowMs >= found.ephemeralExpires) {
-        found.ephemeralCode = uuidv4();
-        found.ephemeralExpires = nowMs + TOKEN_TTL_SECONDS * 1000;
-        saveUsers();
-      }
-    }
-
     const { passwordHash: _ph, ...student } = found || {};
 
     res.json({ token, qrUrl, ttl: TOKEN_TTL_SECONDS, student, ephemeralCode: found?.ephemeralCode });
@@ -349,3 +337,4 @@ app.get("/prof/session/:id", requireAuth("teacher"), (req, res) => {
 app.listen(PORT, () => {
   console.log("API QR efímero escuchando en http://localhost:" + PORT);
 });
+
