@@ -24,6 +24,7 @@ import {
   getAttendanceEntry,
   updateUserPhotoPath,
   updateUserExpiry,
+  getPool,
 } from "./db.js";
 import { uploadUserAvatarFromDataUrl, createSignedAvatarUrl, replaceUserAvatarFromDataUrl, deleteAvatarPath, supabaseAdmin } from "./storage.js";
 
@@ -109,7 +110,8 @@ app.get('/health', (req, res) => {
 // Lightweight diagnostics (guarded by DEBUG_KEY)
 const DEBUG_KEY = process.env.DEBUG_KEY;
 app.get('/__debug', async (req, res) => {
-  if (!DEBUG_KEY || req.query.k !== DEBUG_KEY) return res.status(403).json({ ok: false, error: 'forbidden' });
+  const provided = req.query?.k || req.headers['x-debug-key'];
+  if (!DEBUG_KEY || provided !== DEBUG_KEY) return res.status(403).json({ ok: false, error: 'forbidden' });
   const out = {
     ok: true,
     env: {
@@ -123,7 +125,8 @@ app.get('/__debug', async (req, res) => {
     storage: {},
   };
   try {
-    const { rows } = await (await import('./db.js')).then(m => m.getPool()).then(p => p.query('select now() as now'));
+    const p = await getPool();
+    const { rows } = await p.query('select now() as now');
     out.db.now = rows?.[0]?.now;
     out.db.ok = true;
   } catch (e) {
@@ -133,7 +136,7 @@ app.get('/__debug', async (req, res) => {
   try {
     const sb = supabaseAdmin();
     const bucket = process.env.AVATAR_BUCKET || 'avatars';
-    const { data, error } = await sb.storage.from(bucket).list({ limit: 1 });
+    const { data, error } = await sb.storage.from(bucket).list('', { limit: 1 });
     if (error) throw error;
     out.storage.ok = true;
     out.storage.sample = data?.[0]?.name || null;
