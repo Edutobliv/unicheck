@@ -15,37 +15,14 @@ if (!connectionString) {
 let pool; // lazy singleton
 
 async function createPool() {
-  // Prefer IPv4: resolve DB host to A record and connect by IP to avoid IPv6 ENETUNREACH on some hosts
-  try {
-    const url = new URL(connectionString);
-    const host = url.hostname;
-    const port = Number(url.port || 5432);
-    const user = decodeURIComponent(url.username || '');
-    const password = decodeURIComponent(url.password || '');
-    const database = url.pathname?.replace(/^\//, '') || 'postgres';
-    const optionsParam = url.searchParams.get('options'); // e.g. project routing for Supabase pooler
-    const sslMode = (url.searchParams.get('sslmode') || '').toLowerCase();
-    const ssl = { rejectUnauthorized: false };
-    const { address } = await dns.lookup(host, { family: 4 });
-    const cfg = {
-      host: address,
-      port,
-      user,
-      password,
-      database,
-      ssl,
-      keepAlive: true,
-      application_name: process.env.PG_APP_NAME || 'unicheck-api',
-    };
-    if (optionsParam) {
-      // Node-postgres supports an 'options' connection parameter
-      cfg.options = optionsParam;
-    }
-    return new Pool(cfg);
-  } catch (e) {
-    // Fallback to connectionString if anything fails
-    return new Pool({ connectionString, ssl: { rejectUnauthorized: false }, keepAlive: true, application_name: 'unicheck-api' });
-  }
+  // Use the connection string as-is to preserve all parameters (sslmode, options=project=...)
+  // and proper TLS SNI. Add keepAlive and relaxed SSL verification.
+  return new Pool({
+    connectionString,
+    ssl: { rejectUnauthorized: false },
+    keepAlive: true,
+    application_name: process.env.PG_APP_NAME || 'unicheck-api',
+  });
 }
 
 export async function getPool() {

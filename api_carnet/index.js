@@ -25,7 +25,7 @@ import {
   updateUserPhotoPath,
   updateUserExpiry,
 } from "./db.js";
-import { uploadUserAvatarFromDataUrl, createSignedAvatarUrl, replaceUserAvatarFromDataUrl, deleteAvatarPath } from "./storage.js";
+import { uploadUserAvatarFromDataUrl, createSignedAvatarUrl, replaceUserAvatarFromDataUrl, deleteAvatarPath, supabaseAdmin } from "./storage.js";
 
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -104,6 +104,44 @@ app.get("/.well-known/jwks.json", (req, res) => {
 // Health check for uptime/Render
 app.get('/health', (req, res) => {
   res.json({ ok: true });
+});
+
+// Lightweight diagnostics (guarded by DEBUG_KEY)
+const DEBUG_KEY = process.env.DEBUG_KEY;
+app.get('/__debug', async (req, res) => {
+  if (!DEBUG_KEY || req.query.k !== DEBUG_KEY) return res.status(403).json({ ok: false, error: 'forbidden' });
+  const out = {
+    ok: true,
+    env: {
+      hasDatabaseUrl: !!process.env.DATABASE_URL,
+      hasSupabaseUrl: !!process.env.SUPABASE_URL,
+      hasSupabaseServiceRole: !!process.env.SUPABASE_SERVICE_ROLE,
+      avatarBucket: process.env.AVATAR_BUCKET || 'avatars',
+      baseUrl: BASE_URL,
+    },
+    db: {},
+    storage: {},
+  };
+  try {
+    const { rows } = await (await import('./db.js')).then(m => m.getPool()).then(p => p.query('select now() as now'));
+    out.db.now = rows?.[0]?.now;
+    out.db.ok = true;
+  } catch (e) {
+    out.db.ok = false;
+    out.db.error = e?.message || String(e);
+  }
+  try {
+    const sb = supabaseAdmin();
+    const bucket = process.env.AVATAR_BUCKET || 'avatars';
+    const { data, error } = await sb.storage.from(bucket).list({ limit: 1 });
+    if (error) throw error;
+    out.storage.ok = true;
+    out.storage.sample = data?.[0]?.name || null;
+  } catch (e) {
+    out.storage.ok = false;
+    out.storage.error = e?.message || String(e);
+  }
+  res.json(out);
 });
 
 // Endpoint de login básico
