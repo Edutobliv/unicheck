@@ -16,6 +16,7 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> {
+  final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _codeController = TextEditingController();
   final _emailController = TextEditingController();
@@ -48,7 +49,39 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
+  bool _isEducationalEmail(String email) {
+    final at = email.indexOf('@');
+    if (at <= 0 || at == email.length - 1) return false;
+    final domain = email.substring(at + 1).toLowerCase();
+    if (domain.endsWith('.edu')) return true;
+    final eduOrAcCcTld = RegExp(r"\.(edu|ac)\.[a-z]{2}$");
+    if (eduOrAcCcTld.hasMatch(domain)) return true;
+    const List<String> extraAllowed = [];
+    for (final d in extraAllowed) {
+      if (domain == d || domain.endsWith('.' + d)) return true;
+    }
+    return false;
+  }
+
+  String? _validateEducationalEmail(String? value) {
+    final v = (value ?? '').trim();
+    if (v.isEmpty) return 'El correo es obligatorio';
+    final basic = RegExp(r'^.+@.+\..+$');
+    if (!basic.hasMatch(v)) return 'Formato de correo inválido';
+    if (!_isEducationalEmail(v)) {
+      return 'Solo se permiten correos educativos (.edu, .edu.xx, .ac.xx)';
+    }
+    return null;
+  }
+
   void _submit() {
+    final form = _formKey.currentState;
+    if (form != null && !form.validate()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Corrige los errores antes de continuar')),
+      );
+      return;
+    }
     final expiry = _expiryDate != null
         ? '${_expiryDate!.day.toString().padLeft(2, '0')}/${_expiryDate!.month.toString().padLeft(2, '0')}/${_expiryDate!.year}'
         : null;
@@ -120,9 +153,11 @@ class _RegisterPageState extends State<RegisterPage> {
           AppBar(title: const Text('Registro'), actions: const [ThemeToggleButton()]),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
             TextField(
               controller: _codeController,
               decoration: const InputDecoration(labelText: 'Código'),
@@ -133,9 +168,14 @@ class _RegisterPageState extends State<RegisterPage> {
               decoration: const InputDecoration(labelText: 'Nombre'),
             ),
             const SizedBox(height: 15),
-            TextField(
+            TextFormField(
               controller: _emailController,
-              decoration: const InputDecoration(labelText: 'Correo'),
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Correo',
+                helperText: 'Usa tu correo institucional (.edu, .edu.xx, .ac.xx)',
+              ),
+              validator: _validateEducationalEmail,
             ),
             const SizedBox(height: 15),
             TextField(
@@ -192,6 +232,7 @@ class _RegisterPageState extends State<RegisterPage> {
               child: const Text('Registrar'),
             ),
           ],
+        ),
         ),
       ),
     );
