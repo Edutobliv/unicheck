@@ -5,16 +5,50 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '.env') });
 import { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
+import { promises as dns } from 'node:dns';
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
   console.warn('[db] DATABASE_URL no definido. Configura api_carnet/.env');
 }
 
-export const pool = new Pool({
-  connectionString,
-  ssl: { rejectUnauthorized: false },
-});
+let pool; // lazy singleton
+
+async function createPool() {
+  // Prefer IPv4: resolve DB host to A record and connect by IP to avoid IPv6 ENETUNREACH on some hosts
+  try {
+    const url = new URL(connectionString);
+    const host = url.hostname;
+    const port = Number(url.port || 5432);
+    const user = decodeURIComponent(url.username || '');
+    const password = decodeURIComponent(url.password || '');
+    const database = url.pathname?.replace(/^\//, '') || 'postgres';
+    const { address } = await dns.lookup(host, { family: 4 });
+    return new Pool({
+      host: address,
+      port,
+      user,
+      password,
+      database,
+      ssl: { rejectUnauthorized: false },
+    });
+  } catch (e) {
+    // Fallback to connectionString if anything fails
+    return new Pool({ connectionString, ssl: { rejectUnauthorized: false } });
+  }
+}
+
+export async function getPool() {
+  if (!pool) pool = await createPool();
+  return pool;
+}
+
+export async function endPool() {
+  if (pool) {
+    await pool.end();
+    pool = undefined;
+  }
+}
 
 export async function ensureSchema() {
   const sql = `
@@ -52,7 +86,8 @@ export async function ensureSchema() {
   );
   create index if not exists used_jti_expires_idx on used_jti (expires_at);
   `;
-  await pool.query(sql);
+  const p = await getPool();
+  await p.query(sql);
 }
 
 function mapUserRow(row) {
@@ -71,22 +106,26 @@ function mapUserRow(row) {
 }
 
 export async function getUserByEmail(email) {
-  const { rows } = await pool.query('select * from users where email=$1', [email]);
+  const p = await getPool();
+  const { rows } = await p.query('select * from users where email=$1', [email]);
   return mapUserRow(rows[0]);
 }
 
 export async function getUserByCode(code) {
-  const { rows } = await pool.query('select * from users where code=$1', [code]);
+  const p = await getPool();
+  const { rows } = await p.query('select * from users where code=$1', [code]);
   return mapUserRow(rows[0]);
 }
 
 export async function userExistsByEmailOrCode(email, code) {
-  const { rows } = await pool.query('select 1 from users where email=$1 or code=$2 limit 1', [email, code]);
+  const p = await getPool();
+  const { rows } = await p.query('select 1 from users where email=$1 or code=$2 limit 1', [email, code]);
   return rows.length > 0;
 }
 
 export async function createUser({ code, email, name, role, program, expiresAt, photoUrl, passwordHash }) {
-  const { rows } = await pool.query(
+  const p = await getPool();
+  const { rows } = await p.query(
     `insert into users (code, email, name, role, program, expires_at, photo_url, password_hash)
      values ($1,$2,$3,$4,$5,$6,$7,$8)
      returning *`,
@@ -96,7 +135,8 @@ export async function createUser({ code, email, name, role, program, expiresAt, 
 }
 
 export async function updateUserPhotoPath(userCode, photoPath) {
-  const { rows } = await pool.query(
+  const p = await getPool();
+  const { rows } = await p.query(
     'update users set photo_url=$2 where code=$1 returning *',
     [userCode, photoPath]
   );
@@ -105,16 +145,19 @@ export async function updateUserPhotoPath(userCode, photoPath) {
 
 export async function storeJti(jti, expTs) {
   const expiresAt = new Date(expTs * 1000);
-  await pool.query('insert into used_jti (jti, expires_at, used) values ($1,$2,false) on conflict (jti) do nothing', [jti, expiresAt]);
+  const p = await getPool();
+  await p.query('insert into used_jti (jti, expires_at, used) values ($1,$2,false) on conflict (jti) do nothing', [jti, expiresAt]);
 }
 
 export async function findJti(jti) {
-  const { rows } = await pool.query('select * from used_jti where jti=$1', [jti]);
+  const p = await getPool();
+  const { rows } = await p.query('select * from used_jti where jti=$1', [jti]);
   return rows[0] || null;
 }
 
 export async function markJtiUsed(jti) {
-  await pool.query('update used_jti set used=true where jti=$1', [jti]);
+  const p = await getPool();
+  await p.query('update used_jti set used=true where jti=$1', [jti]);
 }
 
 function mapSessionRow(row) {
@@ -130,7 +173,8 @@ function mapSessionRow(row) {
 export async function createSessionWithId(id, teacherCode, startedAt, expiresAt) {
   const sa = startedAt ? new Date(startedAt * 1000) : new Date();
   const ea = expiresAt ? new Date(expiresAt * 1000) : null;
-  const { rows } = await pool.query(
+  const p = await getPool();
+  const { rows } = await p.query(
     'insert into class_sessions (id, teacher_code, started_at, expires_at) values ($1,$2,$3,$4) returning *',
     [id, teacherCode, sa, ea]
   );
@@ -139,23 +183,26 @@ export async function createSessionWithId(id, teacherCode, startedAt, expiresAt)
 
 export async function endSessionNow(sessionId, nowTs) {
   const now = nowTs ? new Date(nowTs * 1000) : new Date();
-  const { rows } = await pool.query('update class_sessions set expires_at=$2 where id=$1 returning *', [sessionId, now]);
+  const p = await getPool();
+  const { rows } = await p.query('update class_sessions set expires_at=$2 where id=$1 returning *', [sessionId, now]);
   return mapSessionRow(rows[0] || null);
 }
 
 export async function getSession(sessionId) {
-  const { rows } = await pool.query('select * from class_sessions where id=$1', [sessionId]);
+  const p = await getPool();
+  const { rows } = await p.query('select * from class_sessions where id=$1', [sessionId]);
   return mapSessionRow(rows[0] || null);
 }
 
 export async function addAttendance(sessionId, studentCode, atTs) {
   const at = atTs ? new Date(atTs * 1000) : new Date();
   const id = uuidv4();
-  await pool.query(
+  const p = await getPool();
+  await p.query(
     'insert into attendance (id, session_id, student_code, at) values ($1, $2, $3, $4) on conflict do nothing',
     [id, sessionId, studentCode, at]
   );
-  const { rows } = await pool.query(
+  const { rows } = await p.query(
     `select a.session_id, a.student_code as code, a.at,
             u.email, u.name
        from attendance a
@@ -170,7 +217,8 @@ export async function addAttendance(sessionId, studentCode, atTs) {
 }
 
 export async function getAttendance(sessionId) {
-  const { rows } = await pool.query(
+  const p = await getPool();
+  const { rows } = await p.query(
     `select a.session_id, a.student_code as code, a.at,
             u.email, u.name
        from attendance a
@@ -183,14 +231,16 @@ export async function getAttendance(sessionId) {
 }
 
 export async function getAttendanceEntry(sessionId, studentCode) {
-  const { rows } = await pool.query('select at from attendance where session_id=$1 and student_code=$2', [sessionId, studentCode]);
+  const p = await getPool();
+  const { rows } = await p.query('select at from attendance where session_id=$1 and student_code=$2', [sessionId, studentCode]);
   if (!rows[0]) return null;
   return { at: Math.floor(new Date(rows[0].at).getTime() / 1000) };
 }
 
 export async function seedUsersIfEmpty(seedList = []) {
   // If there are any users, do nothing
-  const { rows } = await pool.query('select count(*)::int as c from users');
+  const p = await getPool();
+  const { rows } = await p.query('select count(*)::int as c from users');
   if (rows[0]?.c > 0) return;
   for (const u of seedList) {
     await createUser({

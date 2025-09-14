@@ -1,4 +1,4 @@
-import { ensureSchema, pool } from '../db.js';
+import { ensureSchema, endPool } from '../db.js';
 
 try {
   await ensureSchema();
@@ -7,6 +7,5 @@ try {
   console.error('DB schema error:', e);
   process.exitCode = 1;
 } finally {
-  await pool.end();
+  await endPool();
 }
-
