@@ -1,5 +1,8 @@
 // index.js (versión ESM)
 import 'dotenv/config';
+import dns from 'node:dns';
+// Prefer IPv4 first to avoid ENETUNREACH when an IPv6 AAAA is returned (Render free often lacks IPv6 egress)
+try { dns.setDefaultResultOrder('ipv4first'); } catch {}
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
