@@ -23,6 +23,7 @@ import {
   getAttendance,
   getAttendanceEntry,
   updateUserPhotoPath,
+  updateUserExpiry,
 } from "./db.js";
 import { uploadUserAvatarFromDataUrl, createSignedAvatarUrl, replaceUserAvatarFromDataUrl, deleteAvatarPath } from "./storage.js";
 
@@ -107,65 +108,106 @@ app.get('/health', (req, res) => {
 
 // Endpoint de login básico
 app.post("/auth/login", async (req, res) => {
-  const { email, password, code } = req.body || {};
-  if ((!email && !code) || !password)
-    return res.status(400).json({ error: "missing_credentials" });
-
-  let user;
-  if (email) {
-    const domain = email.split("@")[1];
-    if (ALLOWED_DOMAINS.length && !ALLOWED_DOMAINS.includes(domain)) {
-      return res.status(403).json({ error: "domain_not_allowed" });
-    }
-    user = await getUserByEmail(email);
-  } else {
-    user = await getUserByCode(code);
-  }
-
-  if (!user) return res.status(401).json({ error: "invalid_credentials" });
-  const ok = await bcrypt.compare(password, user.passwordHash);
-  if (!ok) return res.status(401).json({ error: "invalid_credentials" });
-
-  const token = await new SignJWT({ role: user.role })
-    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-    .setIssuedAt()
-    .setExpirationTime("1h")
-    .setIssuer("api_carnet")
-    .setSubject(user.code)
-    .sign(new TextEncoder().encode(JWT_SECRET));
-
-  // If the user has a private avatar path, create a short-lived signed URL
-  let signedPhoto = undefined;
   try {
-    if (user.photoUrl) signedPhoto = await createSignedAvatarUrl(user.photoUrl, 300);
-  } catch {}
+    const { email, password, code } = req.body || {};
+    if ((!email && !code) || !password)
+      return res.status(400).json({ error: "missing_credentials", message: "Falta email/código o contraseña" });
 
-  res.json({
-    token,
-    user: {
-      code: user.code,
-      email: user.email,
-      role: user.role,
-      name: user.name,
-      program: user.program,
-      expiresAt: user.expiresAt,
-      photoUrl: signedPhoto || user.photoUrl || null,
-    },
-  });
+    let user;
+    if (email) {
+      const domain = email.split("@")[1];
+      if (ALLOWED_DOMAINS.length && !ALLOWED_DOMAINS.includes(domain)) {
+        return res.status(403).json({ error: "domain_not_allowed", message: "Dominio de correo no permitido" });
+      }
+      user = await getUserByEmail(email);
+    } else {
+      user = await getUserByCode(code);
+    }
+
+    if (!user) return res.status(401).json({ error: "invalid_credentials", message: "Usuario o contraseña incorrectos" });
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) return res.status(401).json({ error: "invalid_credentials", message: "Usuario o contraseña incorrectos" });
+
+    // Auto-renew student expiry to 6 months if missing or expired
+    try {
+      if (user.role === 'student') {
+        const parseDMY = (s) => {
+          if (!s || typeof s !== 'string') return null;
+          const m = /^([0-3]?\d)\/(1[0-2]|0?\d)\/(\d{4})$/.exec(s.trim());
+          if (!m) return null;
+          const d = parseInt(m[1], 10);
+          const mo = parseInt(m[2], 10) - 1;
+          const y = parseInt(m[3], 10);
+          const dt = new Date(y, mo, d);
+          return isNaN(dt.getTime()) ? null : dt;
+        };
+        const now = new Date();
+        const expDate = parseDMY(user.expiresAt);
+        if (!expDate || expDate < now) {
+          const future = new Date(now.getFullYear(), now.getMonth() + 6, now.getDate());
+          const dd = String(future.getDate()).padStart(2, '0');
+          const mm = String(future.getMonth() + 1).padStart(2, '0');
+          const yyyy = String(future.getFullYear());
+          const newExp = `${dd}/${mm}/${yyyy}`;
+          const updated = await updateUserExpiry(user.code, newExp);
+          if (updated) user = updated;
+        }
+      }
+    } catch {}
+
+    const token = await new SignJWT({ role: user.role })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .setIssuer("api_carnet")
+      .setSubject(user.code)
+      .sign(new TextEncoder().encode(JWT_SECRET));
+
+    // If the user has a private avatar path, create a short-lived signed URL
+    let signedPhoto = undefined;
+    try {
+      if (user.photoUrl) signedPhoto = await createSignedAvatarUrl(user.photoUrl, 300);
+    } catch {}
+
+    res.json({
+      token,
+      user: {
+        code: user.code,
+        email: user.email,
+        role: user.role,
+        name: user.name,
+        program: user.program,
+        expiresAt: user.expiresAt,
+        photoUrl: signedPhoto || user.photoUrl || null,
+      },
+    });
+  } catch (e) {
+    console.error('login_error', e);
+    return res.status(500).json({ error: 'login_failed', message: 'Error del servidor' });
+  }
 });
 
 // Registro de nuevos estudiantes
 app.post("/auth/register", async (req, res) => {
   try {
-    const { code, email, name, password, program, expiresAt, role, photo } = req.body || {};
+    let { code, email, name, password, program, expiresAt, role, photo } = req.body || {};
     if (!code || !email || !name || !password) {
-      return res.status(400).json({ error: "missing_fields" });
+      return res.status(400).json({ error: "missing_fields", message: "Faltan campos obligatorios" });
     }
     const exists = await userExistsByEmailOrCode(email, code);
     if (exists) {
-      return res.status(409).json({ error: "user_exists" });
+      return res.status(409).json({ error: "user_exists", message: "El usuario ya existe" });
     }
     const passwordHash = await bcrypt.hash(password, 10);
+    // Default expiration to 6 months if not provided
+    if (!expiresAt) {
+      const now = new Date();
+      const future = new Date(now.getFullYear(), now.getMonth() + 6, now.getDate());
+      const dd = String(future.getDate()).padStart(2, '0');
+      const mm = String(future.getMonth() + 1).padStart(2, '0');
+      const yyyy = String(future.getFullYear());
+      expiresAt = `${dd}/${mm}/${yyyy}`;
+    }
     let photoPath = null;
     if (photo && typeof photo === 'string' && photo.startsWith('data:')) {
       try {
@@ -195,7 +237,8 @@ app.post("/auth/register", async (req, res) => {
     } catch {}
     res.json({ success: true, ephemeralCode, user: { ...newUser, photoUrl: signedPhoto || newUser.photoUrl } });
   } catch (e) {
-    res.status(500).json({ error: "registration_failed" });
+    console.error('registration_error', e);
+    res.status(500).json({ error: "registration_failed", message: 'No se pudo registrar. Intenta más tarde.' });
   }
 });
 
@@ -312,6 +355,22 @@ app.post("/verify", async (req, res) => {
   try {
     const token = (req.body && req.body.token) || (req.query && req.query.t);
     if (!token) return res.status(400).json({ valid: false, reason: "missing_token" });
+    // Optional porter auth to attribute the scan event
+    let porterCode = null;
+    try {
+      const auth = req.headers.authorization || "";
+      const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+      if (bearer) {
+        const { payload } = await jwtVerify(
+          bearer,
+          new TextEncoder().encode(JWT_SECRET),
+          { issuer: "api_carnet" }
+        );
+        if (payload?.role === 'porter') porterCode = payload.sub;
+      }
+    } catch {}
+    const gateCode = req.query?.gate || req.body?.gate || null;
+    const direction = req.query?.direction || req.body?.direction || 'in';
 
     const { payload, protectedHeader } = await jwtVerify(
       token,
@@ -327,9 +386,11 @@ app.post("/verify", async (req, res) => {
     if (!jti) return res.status(400).json({ valid: false, reason: "missing_jti" });
 
     if (!usedJti.has(jti)) {
+      try { await addAccessEvent({ studentCode: payload.sub, porterCode, gateCode, direction, result: 'expired', jti, kid: protectedHeader?.kid, issuer: BASE_URL, deviceId: payload?.device_id }); } catch {}
       return res.status(401).json({ valid: false, reason: "expired_or_unknown" });
     }
     if (usedJti.get(jti) === true) {
+      try { await addAccessEvent({ studentCode: payload.sub, porterCode, gateCode, direction, result: 'replayed', jti, kid: protectedHeader?.kid, issuer: BASE_URL, deviceId: payload?.device_id }); } catch {}
       return res.status(401).json({ valid: false, reason: "replayed" });
     }
 
@@ -337,7 +398,7 @@ app.post("/verify", async (req, res) => {
 
     const found = await getUserByCode(payload.sub);
     const { passwordHash, ...student } = found || {};
-
+    try { await addAccessEvent({ studentCode: payload.sub, porterCode, gateCode, direction, result: 'valid', jti, kid: protectedHeader?.kid, issuer: BASE_URL, deviceId: payload?.device_id }); } catch {}
     return res.json({
       valid: true,
       kid: protectedHeader.kid,
@@ -359,9 +420,10 @@ app.post("/prof/start-session", requireAuth("teacher"), async (req, res) => {
     const ttlReq = Number(req.body?.ttlSeconds);
     const ttl = Number.isFinite(ttlReq) && ttlReq > 0 ? Math.min(Math.max(ttlReq, 60), 3600) : 10 * 60; // 1-60 min
     const exp = now + ttl;
+    const offeringId = req.body?.offeringId || null;
 
     // Persist session in DB
-    await createSessionWithId(sessionId, teacherCode, now, exp);
+    await createSessionWithId(sessionId, teacherCode, now, exp, offeringId);
 
     // Token firmado con HS256 (clave compartida del API) para que el alumno lo envíe en check-in
     const sessionToken = await new SignJWT({ scope: "attendance", session_id: sessionId })

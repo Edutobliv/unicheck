@@ -61,13 +61,26 @@ class _LoginPageState extends State<LoginPage> {
       _error = null;
     });
     try {
-      final Map<String, String> payload = _emailController.text.contains('@')
+      final input = _emailController.text.trim();
+      final isEmail = input.contains('@');
+      // Validación local: si es código (no email), debe ser numérico
+      if (!isEmail) {
+        final codeOk = RegExp(r'^\d{4,}$').hasMatch(input);
+        if (!codeOk) {
+          setState(() {
+            _error = 'El código debe ser numérico (mín. 4 dígitos). Origen: validación local.';
+          });
+          return;
+        }
+      }
+
+      final Map<String, String> payload = isEmail
           ? {
-              "email": _emailController.text,
+              "email": input,
               "password": _passController.text,
             }
           : {
-              "code": _emailController.text,
+              "code": input,
               "password": _passController.text,
             };
 
@@ -86,6 +99,15 @@ class _LoginPageState extends State<LoginPage> {
         await prefs.setString('role', user['role'] as String);
         await prefs.setString('code', user['code'] as String);
         await prefs.setString('name', user['name'] as String);
+        if (user['expiresAt'] is String) {
+          await prefs.setString('expiresAt', user['expiresAt'] as String);
+        }
+        if (user['program'] is String) {
+          await prefs.setString('program', user['program'] as String);
+        }
+        if (user['photoUrl'] is String) {
+          await prefs.setString('photoUrl', user['photoUrl'] as String);
+        }
         // En web, solo profesores pueden continuar
         final role = user['role'] as String?;
         if (kIsWeb && role != 'teacher') {
@@ -110,13 +132,21 @@ class _LoginPageState extends State<LoginPage> {
         else route = '/carnet';
         Navigator.of(context).pushReplacementNamed(route);
       } else {
-        setState(() {
-          _error = 'Credenciales inválidas';
-        });
+        String msg = 'Credenciales inválidas';
+        try {
+          final body = jsonDecode(resp.body) as Map<String, dynamic>;
+          final err = (body['message'] ?? body['error'])?.toString();
+          if (err != null && err.isNotEmpty) {
+            msg = err + ' (Origen: backend ' + resp.statusCode.toString() + ')';
+          } else {
+            msg = 'Error (Origen: backend ' + resp.statusCode.toString() + ')';
+          }
+        } catch (_) {}
+        setState(() { _error = msg; });
       }
     } catch (e) {
       setState(() {
-        _error = 'Error de red';
+        _error = 'Error de red: ${e.toString()} (Origen: red)';
       });
     } finally {
       if (mounted) {

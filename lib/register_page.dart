@@ -1,13 +1,13 @@
-import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mime/mime.dart' as mime;
 import 'package:http/http.dart' as http;
 
-import 'app_theme.dart';
 import 'api_config.dart';
+import 'app_theme.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -24,11 +24,25 @@ class _RegisterPageState extends State<RegisterPage> {
   final _passwordController = TextEditingController();
   final _programController = TextEditingController();
   final _roleController = TextEditingController(text: 'estudiante');
+  final _expiryController = TextEditingController();
+
   DateTime? _expiryDate;
   Uint8List? _photoBytes;
   String? _photoMime; // image/jpeg | image/png | image/webp
 
   final ImagePicker _picker = ImagePicker();
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _codeController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _programController.dispose();
+    _roleController.dispose();
+    _expiryController.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickExpiryDate() async {
     final now = DateTime.now();
@@ -39,9 +53,16 @@ class _RegisterPageState extends State<RegisterPage> {
       lastDate: DateTime(now.year + 5),
     );
     if (picked != null) {
-      setState(() => _expiryDate = picked);
+      setState(() {
+        _expiryDate = picked;
+        _expiryController.text =
+            '${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}';
+      });
     }
   }
+
+  static const int _maxUploadBytes = 10 * 1024 * 1024; // 10 MB
+  static const Set<String> _allowedMimes = {'image/jpeg', 'image/png', 'image/webp'};
 
   Future<void> _selectPhotoSource() async {
     final source = await showModalBottomSheet<ImageSource>(
@@ -67,9 +88,6 @@ class _RegisterPageState extends State<RegisterPage> {
     if (source == null) return;
     await _pickPhoto(source);
   }
-
-  static const int _maxUploadBytes = 10 * 1024 * 1024; // 10 MB
-  static const Set<String> _allowedMimes = {'image/jpeg','image/png','image/webp'};
 
   Future<void> _pickPhoto(ImageSource source) async {
     final XFile? file = await _picker.pickImage(
@@ -125,11 +143,32 @@ class _RegisterPageState extends State<RegisterPage> {
     return null;
   }
 
+  String? _validateCode(String? value) {
+    final v = (value ?? '').trim();
+    if (v.isEmpty) return 'El código es obligatorio';
+    if (!RegExp(r'^\d{4,}$').hasMatch(v)) return 'El código debe ser numérico (mín. 4 dígitos)';
+    return null;
+  }
+
+  String? _validateName(String? value) {
+    final v = (value ?? '').trim();
+    if (v.isEmpty) return 'El nombre es obligatorio';
+    if (v.length < 3) return 'El nombre es muy corto';
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    final v = (value ?? '').trim();
+    if (v.isEmpty) return 'La contraseña es obligatoria';
+    if (v.length < 8) return 'La contraseña debe tener al menos 8 caracteres';
+    return null;
+  }
+
   void _submit() {
     final form = _formKey.currentState;
     if (form != null && !form.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Corrige los errores antes de continuar')),
+        const SnackBar(content: Text('Corrige los errores antes de continuar. Origen: validación local.')),
       );
       return;
     }
@@ -146,13 +185,12 @@ class _RegisterPageState extends State<RegisterPage> {
       Uri.parse('${ApiConfig.baseUrl}/auth/register'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
-        'code': _codeController.text,
-        'email': _emailController.text,
-        'name': _nameController.text,
+        'code': _codeController.text.trim(),
+        'email': _emailController.text.trim(),
+        'name': _nameController.text.trim(),
         'password': _passwordController.text,
-        'program': _programController.text,
+        'program': _programController.text.trim(),
         'expiresAt': expiry,
-        // Always register students with the expected backend role key
         'role': 'student',
         'photo': _photoBytes != null && _photoMime != null
             ? 'data:${_photoMime!};base64,' + base64Encode(_photoBytes!)
@@ -184,26 +222,32 @@ class _RegisterPageState extends State<RegisterPage> {
           ),
         );
         Future.delayed(const Duration(seconds: 2), () {
-          Navigator.of(context)
-              .pushNamedAndRemoveUntil('/login', (route) => false);
+          Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
         });
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error al registrar')),
-        );
+        String msg = 'Error al registrar';
+        try {
+          final body = jsonDecode(resp.body) as Map<String, dynamic>;
+          final err = (body['message'] ?? body['error'])?.toString();
+          if (err != null && err.isNotEmpty) {
+            msg = '$err (Origen: backend ${resp.statusCode})';
+          } else {
+            msg = 'Error (Origen: backend ${resp.statusCode})';
+          }
+        } catch (_) {}
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       }
-    }).catchError((_) {
+    }).catchError((e) {
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Error de red')));
+          .showSnackBar(SnackBar(content: Text('Error de red (Origen: red): ${e.toString()}')));
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar:
-          AppBar(title: const Text('Registro'), actions: const [ThemeToggleButton()]),
+      appBar: AppBar(title: const Text('Registro'), actions: const [ThemeToggleButton()]),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -211,92 +255,94 @@ class _RegisterPageState extends State<RegisterPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-            TextField(
-              controller: _codeController,
-              decoration: const InputDecoration(labelText: 'Código'),
-            ),
-            const SizedBox(height: 15),
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Nombre'),
-            ),
-            const SizedBox(height: 15),
-            TextFormField(
-              controller: _emailController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: 'Correo',
-                helperText: 'Usa tu correo institucional (.edu, .edu.xx, .ac.xx)',
+              TextFormField(
+                controller: _codeController,
+                decoration: const InputDecoration(labelText: 'Código (solo números)'),
+                keyboardType: TextInputType.number,
+                validator: _validateCode,
               ),
-              validator: _validateEducationalEmail,
-            ),
-            const SizedBox(height: 15),
-            TextField(
-              controller: _passwordController,
-              decoration: const InputDecoration(labelText: 'Contraseña'),
-              obscureText: true,
-            ),
-            const SizedBox(height: 15),
-            TextField(
-              controller: _programController,
-              decoration: const InputDecoration(labelText: 'Programa'),
-            ),
-            const SizedBox(height: 15),
-            TextField(
-              controller: _roleController,
-              decoration: const InputDecoration(labelText: 'Rol'),
-              readOnly: true,
-            ),
-            const SizedBox(height: 15),
-            GestureDetector(
-              onTap: _pickExpiryDate,
-              child: AbsorbPointer(
-                  child: TextField(
-                    decoration: InputDecoration(
-                      labelText: 'Fecha de vencimiento',
-                      hintText: _expiryDate == null
-                          ? 'Opcional'
-                          : '${_expiryDate!.day}/${_expiryDate!.month}/${_expiryDate!.year}',
+              const SizedBox(height: 15),
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Nombre'),
+                validator: _validateName,
+              ),
+              const SizedBox(height: 15),
+              TextFormField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(
+                  labelText: 'Correo',
+                  helperText: 'Usa tu correo institucional (.edu, .edu.xx, .ac.xx)',
+                ),
+                validator: _validateEducationalEmail,
+              ),
+              const SizedBox(height: 15),
+              TextFormField(
+                controller: _passwordController,
+                decoration: const InputDecoration(labelText: 'Contraseña'),
+                obscureText: true,
+                validator: _validatePassword,
+              ),
+              const SizedBox(height: 15),
+              TextFormField(
+                controller: _programController,
+                decoration: const InputDecoration(labelText: 'Programa'),
+              ),
+              const SizedBox(height: 15),
+              TextField(
+                controller: _roleController,
+                decoration: const InputDecoration(labelText: 'Rol'),
+                readOnly: true,
+              ),
+              const SizedBox(height: 15),
+              GestureDetector(
+                onTap: _pickExpiryDate,
+                child: AbsorbPointer(
+                  child: TextFormField(
+                    controller: _expiryController,
+                    decoration: const InputDecoration(
+                      labelText: 'Fecha de vencimiento (opcional)',
+                      hintText: 'Típica renovación semestral automática',
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 15),
-            Center(
-              child: GestureDetector(
-                onTap: _selectPhotoSource,
-                child: Container(
-                  width: 150,
-                  height: 150,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(8),
-                    color: Colors.grey.shade200,
+              const SizedBox(height: 15),
+              Center(
+                child: GestureDetector(
+                  onTap: _selectPhotoSource,
+                  child: Container(
+                    width: 150,
+                    height: 150,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey),
+                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.grey.shade200,
+                    ),
+                    child: _photoBytes == null
+                        ? Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: const [
+                              Icon(Icons.photo_camera, size: 48),
+                              SizedBox(height: 8),
+                              Text('JPG/PNG/WebP · Máx 10MB', style: TextStyle(fontSize: 12)),
+                            ],
+                          )
+                        : Image.memory(_photoBytes!, fit: BoxFit.cover),
                   ),
-                  child: _photoBytes == null
-                      ? Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
-                            Icon(Icons.photo_camera, size: 48),
-                            SizedBox(height: 8),
-                            Text('JPG/PNG/WebP · Máx 10MB', style: TextStyle(fontSize: 12)),
-                          ],
-                        )
-                      : Image.memory(_photoBytes!, fit: BoxFit.cover),
                 ),
               ),
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _submit,
-              child: const Text('Registrar'),
-            ),
-          ],
-        ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: _submit,
+                child: const Text('Registrar'),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
-
 

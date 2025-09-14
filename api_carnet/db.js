@@ -23,18 +23,28 @@ async function createPool() {
     const user = decodeURIComponent(url.username || '');
     const password = decodeURIComponent(url.password || '');
     const database = url.pathname?.replace(/^\//, '') || 'postgres';
+    const optionsParam = url.searchParams.get('options'); // e.g. project routing for Supabase pooler
+    const sslMode = (url.searchParams.get('sslmode') || '').toLowerCase();
+    const ssl = { rejectUnauthorized: false };
     const { address } = await dns.lookup(host, { family: 4 });
-    return new Pool({
+    const cfg = {
       host: address,
       port,
       user,
       password,
       database,
-      ssl: { rejectUnauthorized: false },
-    });
+      ssl,
+      keepAlive: true,
+      application_name: process.env.PG_APP_NAME || 'unicheck-api',
+    };
+    if (optionsParam) {
+      // Node-postgres supports an 'options' connection parameter
+      cfg.options = optionsParam;
+    }
+    return new Pool(cfg);
   } catch (e) {
     // Fallback to connectionString if anything fails
-    return new Pool({ connectionString, ssl: { rejectUnauthorized: false } });
+    return new Pool({ connectionString, ssl: { rejectUnauthorized: false }, keepAlive: true, application_name: 'unicheck-api' });
   }
 }
 
@@ -59,6 +69,7 @@ export async function ensureSchema() {
     role text not null,
     program text,
     expires_at text,
+    expires_on date,
     photo_url text,
     password_hash text not null,
     created_at timestamptz default now()
@@ -68,7 +79,8 @@ export async function ensureSchema() {
     id uuid primary key,
     teacher_code text not null references users(code) on delete cascade,
     started_at timestamptz not null default now(),
-    expires_at timestamptz
+    expires_at timestamptz,
+    offering_id uuid
   );
 
   create table if not exists attendance (
@@ -76,6 +88,9 @@ export async function ensureSchema() {
     session_id uuid not null references class_sessions(id) on delete cascade,
     student_code text not null references users(code) on delete cascade,
     at timestamptz not null default now(),
+    status text not null default 'present' check (status in ('present','late','excused','absent')),
+    source text not null default 'qr' check (source in ('qr','manual')),
+    recorded_by text references users(code) on delete set null,
     constraint attendance_unique unique(session_id, student_code)
   );
 
@@ -85,20 +100,81 @@ export async function ensureSchema() {
     expires_at timestamptz not null
   );
   create index if not exists used_jti_expires_idx on used_jti (expires_at);
+
+  -- Gates and access events for porter flow
+  create table if not exists gates (
+    id uuid primary key default gen_random_uuid(),
+    code text unique not null,
+    name text not null,
+    location text,
+    latitude double precision,
+    longitude double precision,
+    is_active boolean not null default true,
+    created_at timestamptz default now()
+  );
+
+  create table if not exists access_events (
+    id uuid primary key default gen_random_uuid(),
+    scanned_at timestamptz not null default now(),
+    student_code text not null references users(code) on delete cascade,
+    porter_code text references users(code) on delete set null,
+    gate_id uuid references gates(id) on delete set null,
+    direction text check (direction in ('in','out')) default 'in',
+    result text not null check (result in ('valid','expired','replayed','forbidden','unknown','invalid')),
+    token_jti text,
+    token_kid text,
+    issuer text,
+    device_id text,
+    meta jsonb
+  );
+  create index if not exists access_events_scanned_idx on access_events (scanned_at desc);
+  create index if not exists access_events_student_idx on access_events (student_code);
   `;
   const p = await getPool();
   await p.query(sql);
+
+  // One-time migration: fill expires_on from legacy expires_at text (DD/MM/YYYY)
+  try {
+    await p.query(`
+      update users
+         set expires_on = coalesce(expires_on, to_date(expires_at, 'DD/MM/YYYY'))
+       where expires_at ~ '^[0-3]?[0-9]/[0-1]?[0-9]/[0-9]{4}$'
+         and (expires_on is null);
+    `);
+  } catch {}
 }
 
 function mapUserRow(row) {
   if (!row) return null;
+  const fmtDate = (d) => {
+    if (!d) return undefined;
+    // d can be string 'YYYY-MM-DD' or Date
+    let y, m, day;
+    if (d instanceof Date) {
+      y = d.getFullYear();
+      m = d.getMonth() + 1;
+      day = d.getDate();
+    } else if (typeof d === 'string') {
+      const m1 = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+      if (m1) {
+        y = parseInt(m1[1], 10);
+        m = parseInt(m1[2], 10);
+        day = parseInt(m1[3], 10);
+      }
+    }
+    if (!y) return undefined;
+    const dd = String(day).padStart(2, '0');
+    const mm = String(m).padStart(2, '0');
+    const yyyy = String(y);
+    return `${dd}/${mm}/${yyyy}`;
+  };
   return {
     code: row.code,
     email: row.email,
     name: row.name,
     role: row.role,
     program: row.program ?? undefined,
-    expiresAt: row.expires_at ?? undefined,
+    expiresAt: fmtDate(row.expires_on) ?? row.expires_at ?? undefined,
     photoUrl: row.photo_url ?? undefined,
     passwordHash: row.password_hash,
     createdAt: row.created_at ? Math.floor(new Date(row.created_at).getTime() / 1000) : undefined,
@@ -126,8 +202,8 @@ export async function userExistsByEmailOrCode(email, code) {
 export async function createUser({ code, email, name, role, program, expiresAt, photoUrl, passwordHash }) {
   const p = await getPool();
   const { rows } = await p.query(
-    `insert into users (code, email, name, role, program, expires_at, photo_url, password_hash)
-     values ($1,$2,$3,$4,$5,$6,$7,$8)
+    `insert into users (code, email, name, role, program, expires_on, photo_url, password_hash)
+     values ($1,$2,$3,$4,$5, to_date($6,'DD/MM/YYYY'), $7,$8)
      returning *`,
     [code, email, name, role, program || null, expiresAt || null, photoUrl || null, passwordHash]
   );
@@ -139,6 +215,15 @@ export async function updateUserPhotoPath(userCode, photoPath) {
   const { rows } = await p.query(
     'update users set photo_url=$2 where code=$1 returning *',
     [userCode, photoPath]
+  );
+  return mapUserRow(rows[0]);
+}
+
+export async function updateUserExpiry(userCode, expiresAt) {
+  const p = await getPool();
+  const { rows } = await p.query(
+    'update users set expires_on = to_date($2,\'DD/MM/YYYY\'), expires_at = null where code=$1 returning *',
+    [userCode, expiresAt]
   );
   return mapUserRow(rows[0]);
 }
@@ -170,13 +255,13 @@ function mapSessionRow(row) {
   };
 }
 
-export async function createSessionWithId(id, teacherCode, startedAt, expiresAt) {
+export async function createSessionWithId(id, teacherCode, startedAt, expiresAt, offeringId) {
   const sa = startedAt ? new Date(startedAt * 1000) : new Date();
   const ea = expiresAt ? new Date(expiresAt * 1000) : null;
   const p = await getPool();
   const { rows } = await p.query(
-    'insert into class_sessions (id, teacher_code, started_at, expires_at) values ($1,$2,$3,$4) returning *',
-    [id, teacherCode, sa, ea]
+    'insert into class_sessions (id, teacher_code, started_at, expires_at, offering_id) values ($1,$2,$3,$4,$5) returning *',
+    [id, teacherCode, sa, ea, offeringId || null]
   );
   return mapSessionRow(rows[0]);
 }
@@ -219,7 +304,7 @@ export async function addAttendance(sessionId, studentCode, atTs) {
 export async function getAttendance(sessionId) {
   const p = await getPool();
   const { rows } = await p.query(
-    `select a.session_id, a.student_code as code, a.at,
+    `select a.session_id, a.student_code as code, a.at, a.status,
             u.email, u.name
        from attendance a
        left join users u on u.code = a.student_code
@@ -227,7 +312,7 @@ export async function getAttendance(sessionId) {
       order by a.at asc`,
     [sessionId]
   );
-  return rows.map(r => ({ code: r.code, email: r.email, name: r.name, at: Math.floor(new Date(r.at).getTime() / 1000) }));
+  return rows.map(r => ({ code: r.code, email: r.email, name: r.name, at: Math.floor(new Date(r.at).getTime() / 1000), status: r.status }));
 }
 
 export async function getAttendanceEntry(sessionId, studentCode) {
@@ -254,4 +339,34 @@ export async function seedUsersIfEmpty(seedList = []) {
       passwordHash: u.passwordHash,
     });
   }
+}
+
+export async function getGateByCode(code) {
+  if (!code) return null;
+  const p = await getPool();
+  const { rows } = await p.query('select id from gates where code=$1', [code]);
+  return rows[0]?.id || null;
+}
+
+export async function addAccessEvent({ scannedAt, studentCode, porterCode, gateCode, direction = 'in', result, jti, kid, issuer, deviceId, meta }) {
+  if (!studentCode || !result) return null;
+  const p = await getPool();
+  const gateId = gateCode ? await getGateByCode(gateCode) : null;
+  const sql = `insert into access_events (scanned_at, student_code, porter_code, gate_id, direction, result, token_jti, token_kid, issuer, device_id, meta)
+               values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`;
+  const vals = [
+    scannedAt ? new Date(scannedAt * 1000) : new Date(),
+    studentCode,
+    porterCode || null,
+    gateId,
+    direction || 'in',
+    result,
+    jti || null,
+    kid || null,
+    issuer || null,
+    deviceId || null,
+    meta || null,
+  ];
+  await p.query(sql, vals);
+  return true;
 }

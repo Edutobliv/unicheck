@@ -70,8 +70,23 @@ class _CarnetPageState extends State<CarnetPage> {
   void initState() {
     super.initState();
     if (!kIsWeb) {
-      _fetchQr();
+      _primeFromPrefs().whenComplete(_fetchQr);
     }
+  }
+
+  Future<void> _primeFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _student = {
+          if (prefs.getString('code') != null) 'code': prefs.getString('code'),
+          if (prefs.getString('name') != null) 'name': prefs.getString('name'),
+          if (prefs.getString('program') != null) 'program': prefs.getString('program'),
+          if (prefs.getString('expiresAt') != null) 'expiresAt': prefs.getString('expiresAt'),
+          if (prefs.getString('photoUrl') != null) 'photoUrl': prefs.getString('photoUrl'),
+        }..removeWhere((k, v) => v == null);
+      });
+    } catch (_) {}
   }
 
   Future<void> _fetchQr() async {
