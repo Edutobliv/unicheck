@@ -1,21 +1,33 @@
 // index.js (versión ESM)
+import 'dotenv/config';
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import { generateKeyPair, SignJWT, jwtVerify, exportJWK, importJWK } from "jose";
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcryptjs";
-import { users, saveUsers } from "./users.js";
+import {
+  ensureSchema,
+  seedUsersIfEmpty,
+  getUserByEmail,
+  getUserByCode,
+  userExistsByEmailOrCode,
+  createUser,
+  createSessionWithId,
+  getSession,
+  endSessionNow,
+  addAttendance,
+  getAttendance,
+  getAttendanceEntry,
+  updateUserPhotoPath,
+} from "./db.js";
+import { uploadUserAvatarFromDataUrl, createSignedAvatarUrl, replaceUserAvatarFromDataUrl, deleteAvatarPath } from "./storage.js";
 
 const PORT = process.env.PORT || 3000;
 const TOKEN_TTL_SECONDS = 15; // cada token/QR dura 15 segundos
 
-// Para este MVP usaremos memoria local en lugar de Redis
+// Para este MVP usaremos memoria local solo para evitar reuso de tokens efímeros
 const usedJti = new Map();
-
-// Sesiones de clase (profesor genera QR, alumnos hacen check-in)
-const classSessions = new Map(); // sessionId -> { id, teacherCode, startedAt, expiresAt }
-const attendanceBySession = new Map(); // sessionId -> [ { code, email, name, at } ]
 
 // Permitir cualquier dominio por defecto; si se define ALLOWED_EMAIL_DOMAINS,
 // se restringe a los listados (separados por comas)
@@ -28,7 +40,8 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
 const app = express();
 app.use(cors());
 app.use(helmet());
-app.use(express.json());
+// Allow up to ~20MB JSON payloads to accommodate base64 images (~1.33x overhead for 10MB raw)
+app.use(express.json({ limit: '20mb' }));
 
 let privateKey;
 let publicJwk;
@@ -39,11 +52,48 @@ let publicJwk;
   privateKey = pk;
   publicJwk = await exportJWK(publicKey);
   publicJwk.kid = "ed25519-key-1";
+  // Initialize DB schema and seed demo users if empty
+  try {
+    await ensureSchema();
+    await seedUsersIfEmpty([
+      {
+        code: 'U20230001',
+        email: 'alumno1@example.edu',
+        name: 'Alumno Uno',
+        role: 'student',
+        program: 'INGENIERIA DE SISTEMAS',
+        expiresAt: '30/06/2025',
+        photoUrl: null,
+        passwordHash: '$2b$10$kex/FEd9ELMutckwBETx2u2E52FdIKsE8YGvXSw02k6BVZpEvGatS'
+      },
+      {
+        code: 'DOC123',
+        email: 'docente@example.edu',
+        name: 'Docente Uno',
+        role: 'teacher',
+        passwordHash: '$2b$10$kex/FEd9ELMutckwBETx2u2E52FdIKsE8YGvXSw02k6BVZpEvGatS'
+      },
+      {
+        code: 'PORT001',
+        email: 'portero@example.edu',
+        name: 'Portero Uno',
+        role: 'porter',
+        passwordHash: '$2b$10$kex/FEd9ELMutckwBETx2u2E52FdIKsE8YGvXSw02k6BVZpEvGatS'
+      }
+    ]);
+  } catch (e) {
+    console.error('DB init error:', e);
+  }
 })();
 
 // Endpoint para publicar la clave pública (útil para verificadores)
 app.get("/.well-known/jwks.json", (req, res) => {
   res.json({ keys: [publicJwk] });
+});
+
+// Health check for uptime/Render
+app.get('/health', (req, res) => {
+  res.json({ ok: true });
 });
 
 // Endpoint de login básico
@@ -58,9 +108,9 @@ app.post("/auth/login", async (req, res) => {
     if (ALLOWED_DOMAINS.length && !ALLOWED_DOMAINS.includes(domain)) {
       return res.status(403).json({ error: "domain_not_allowed" });
     }
-    user = users.find((u) => u.email === email);
+    user = await getUserByEmail(email);
   } else {
-    user = users.find((u) => u.code === code);
+    user = await getUserByCode(code);
   }
 
   if (!user) return res.status(401).json({ error: "invalid_credentials" });
@@ -75,6 +125,12 @@ app.post("/auth/login", async (req, res) => {
     .setSubject(user.code)
     .sign(new TextEncoder().encode(JWT_SECRET));
 
+  // If the user has a private avatar path, create a short-lived signed URL
+  let signedPhoto = undefined;
+  try {
+    if (user.photoUrl) signedPhoto = await createSignedAvatarUrl(user.photoUrl, 300);
+  } catch {}
+
   res.json({
     token,
     user: {
@@ -84,6 +140,7 @@ app.post("/auth/login", async (req, res) => {
       name: user.name,
       program: user.program,
       expiresAt: user.expiresAt,
+      photoUrl: signedPhoto || user.photoUrl || null,
     },
   });
 });
@@ -95,30 +152,92 @@ app.post("/auth/register", async (req, res) => {
     if (!code || !email || !name || !password) {
       return res.status(400).json({ error: "missing_fields" });
     }
-    const exists = users.some((u) => u.email === email || u.code === code);
+    const exists = await userExistsByEmailOrCode(email, code);
     if (exists) {
       return res.status(409).json({ error: "user_exists" });
     }
     const passwordHash = await bcrypt.hash(password, 10);
-    const newUser = {
+    let photoPath = null;
+    if (photo && typeof photo === 'string' && photo.startsWith('data:')) {
+      try {
+        // Use fixed path to avoid acumulating objects; no previous photo on new user
+        photoPath = await replaceUserAvatarFromDataUrl(photo, code, null);
+      } catch (e) {
+        console.warn('Avatar upload failed:', e?.message || e);
+      }
+    }
+
+    const newUser = await createUser({
       code,
       email,
       name,
       role: role || "student",
       program,
       expiresAt,
-      photoUrl: photo || null,
+      photoUrl: photoPath,
       passwordHash,
-    };
-    users.push(newUser);
-    // Persist the new account so it can log in later
-    saveUsers();
+    });
 
     const ephemeralCode = uuidv4();
-    const { passwordHash: _ph, ...safeUser } = newUser;
-    res.json({ success: true, ephemeralCode, user: safeUser });
+    // Return a signed URL if private avatar was stored
+    let signedPhoto = null;
+    try {
+      if (newUser.photoUrl) signedPhoto = await createSignedAvatarUrl(newUser.photoUrl, 300);
+    } catch {}
+    res.json({ success: true, ephemeralCode, user: { ...newUser, photoUrl: signedPhoto || newUser.photoUrl } });
   } catch (e) {
     res.status(500).json({ error: "registration_failed" });
+  }
+});
+
+// Obtener una URL firmada temporal para la foto del usuario autenticado
+app.get("/users/me/photo-url", requireAuth(), async (req, res) => {
+  try {
+    const user = await getUserByCode(req.user.code);
+    if (!user) return res.status(404).json({ error: "user_not_found" });
+    if (!user.photoUrl) return res.json({ photoUrl: null, expiresIn: 0 });
+    const ttl = 300; // 5 minutos
+    const signed = await createSignedAvatarUrl(user.photoUrl, ttl);
+    return res.json({ photoUrl: signed, expiresIn: ttl });
+  } catch (e) {
+    return res.status(500).json({ error: "sign_url_failed" });
+  }
+});
+
+// Reemplazar la foto del usuario autenticado (acepta data URL), comprime y sobreescribe avatar único
+app.put("/users/me/photo", requireAuth(), async (req, res) => {
+  try {
+    const { photo } = req.body || {};
+    if (!photo || typeof photo !== 'string' || !photo.startsWith('data:')) {
+      return res.status(400).json({ error: 'invalid_photo' });
+    }
+    const user = await getUserByCode(req.user.code);
+    if (!user) return res.status(404).json({ error: 'user_not_found' });
+
+    const newPath = await replaceUserAvatarFromDataUrl(photo, req.user.code, user.photoUrl);
+    // Persist path
+    await updateUserPhotoPath(req.user.code, newPath);
+    const ttl = 300;
+    const signed = await createSignedAvatarUrl(newPath, ttl);
+    return res.json({ photoUrl: signed, expiresIn: ttl });
+  } catch (e) {
+    console.error('photo_update_error', e);
+    return res.status(500).json({ error: 'photo_update_failed' });
+  }
+});
+
+// Eliminar la foto del usuario autenticado y liberar espacio en el bucket
+app.delete("/users/me/photo", requireAuth(), async (req, res) => {
+  try {
+    const user = await getUserByCode(req.user.code);
+    if (!user) return res.status(404).json({ error: 'user_not_found' });
+    if (!user.photoUrl) return res.json({ ok: true, deleted: false });
+    await deleteAvatarPath(user.photoUrl);
+    await updateUserPhotoPath(req.user.code, null);
+    return res.json({ ok: true, deleted: true });
+  } catch (e) {
+    console.error('photo_delete_error', e);
+    return res.status(500).json({ error: 'photo_delete_failed' });
   }
 });
 
@@ -169,8 +288,8 @@ app.post("/issue-ephemeral", requireAuth("student"), async (req, res) => {
     setTimeout(() => usedJti.delete(jti), TOKEN_TTL_SECONDS * 1000 + 2000);
 
     const qrUrl = `http://localhost:${PORT}/verify?t=${encodeURIComponent(token)}`;
-    const found = users.find((u) => u.code === code);
-    const { passwordHash: _ph, ...student } = found || {};
+    const found = await getUserByCode(code);
+    const { passwordHash, ...student } = found || {};
 
     res.json({ token, qrUrl, ttl: TOKEN_TTL_SECONDS, student, ephemeralCode: found?.ephemeralCode });
   } catch (e) {
@@ -207,7 +326,8 @@ app.post("/verify", async (req, res) => {
 
     usedJti.set(jti, true);
 
-    const student = users.find((u) => u.code === payload.sub);
+    const found = await getUserByCode(payload.sub);
+    const { passwordHash, ...student } = found || {};
 
     return res.json({
       valid: true,
@@ -231,13 +351,8 @@ app.post("/prof/start-session", requireAuth("teacher"), async (req, res) => {
     const ttl = Number.isFinite(ttlReq) && ttlReq > 0 ? Math.min(Math.max(ttlReq, 60), 3600) : 10 * 60; // 1-60 min
     const exp = now + ttl;
 
-    classSessions.set(sessionId, {
-      id: sessionId,
-      teacherCode,
-      startedAt: now,
-      expiresAt: exp,
-    });
-    attendanceBySession.set(sessionId, []);
+    // Persist session in DB
+    await createSessionWithId(sessionId, teacherCode, now, exp);
 
     // Token firmado con HS256 (clave compartida del API) para que el alumno lo envíe en check-in
     const sessionToken = await new SignJWT({ scope: "attendance", session_id: sessionId })
@@ -263,17 +378,16 @@ app.post("/prof/start-session", requireAuth("teacher"), async (req, res) => {
 });
 
 // Profesor finaliza una sesión (deja de aceptar check-ins, pero permite consultar lista)
-app.post("/prof/end-session", requireAuth("teacher"), (req, res) => {
+app.post("/prof/end-session", requireAuth("teacher"), async (req, res) => {
   const sessionId = req.body?.sessionId || req.query?.id;
   if (!sessionId) return res.status(400).json({ error: "missing_session_id" });
-  const session = classSessions.get(sessionId);
+  const session = await getSession(sessionId);
   if (!session) return res.status(404).json({ error: "session_not_found" });
   if (session.teacherCode !== req.user.code) return res.status(403).json({ error: "forbidden" });
   const now = Math.floor(Date.now() / 1000);
-  session.expiresAt = now;
-  classSessions.set(sessionId, session);
-  const attendees = attendanceBySession.get(sessionId) || [];
-  return res.json({ ok: true, session, attendees });
+  const updated = await endSessionNow(sessionId, now);
+  const attendees = await getAttendance(sessionId);
+  return res.json({ ok: true, session: updated, attendees });
 });
 
 // Alumno hace check-in a la sesión escaneada (necesita estar logueado como student)
@@ -294,7 +408,7 @@ app.post("/attendance/check-in", requireAuth("student"), async (req, res) => {
     const sessionId = payload.session_id;
     if (!sessionId) return res.status(400).json({ error: "missing_session_id" });
 
-    const session = classSessions.get(sessionId);
+    const session = await getSession(sessionId);
     if (!session) return res.status(404).json({ error: "session_not_found" });
 
     const now = Math.floor(Date.now() / 1000);
@@ -302,22 +416,14 @@ app.post("/attendance/check-in", requireAuth("student"), async (req, res) => {
       return res.status(400).json({ error: "session_expired" });
     }
 
-    const attendees = attendanceBySession.get(sessionId) || [];
-    const already = attendees.find((a) => a.code === req.user.code);
-    if (already) {
-      return res.json({ ok: true, already: true, at: already.at, sessionId });
+    const existing = await getAttendanceEntry(sessionId, req.user.code);
+    if (existing) {
+      return res.json({ ok: true, already: true, at: existing.at, sessionId });
     }
 
     // Buscar datos del estudiante para devolver información útil
-    const student = users.find((u) => u.code === req.user.code);
-    const entry = {
-      code: student?.code || req.user.code,
-      email: student?.email,
-      name: student?.name,
-      at: now,
-    };
-    attendees.push(entry);
-    attendanceBySession.set(sessionId, attendees);
+    const newEntry = await addAttendance(sessionId, req.user.code, now);
+    const entry = newEntry;
 
     return res.json({ ok: true, sessionId, entry });
   } catch (e) {
@@ -326,11 +432,11 @@ app.post("/attendance/check-in", requireAuth("student"), async (req, res) => {
 });
 
 // Profesor consulta la asistencia de una sesión
-app.get("/prof/session/:id", requireAuth("teacher"), (req, res) => {
+app.get("/prof/session/:id", requireAuth("teacher"), async (req, res) => {
   const sessionId = req.params.id;
-  const session = classSessions.get(sessionId);
+  const session = await getSession(sessionId);
   if (!session) return res.status(404).json({ error: "session_not_found" });
-  const attendees = attendanceBySession.get(sessionId) || [];
+  const attendees = await getAttendance(sessionId);
   return res.json({ session, attendees });
 });
 

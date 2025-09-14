@@ -4,28 +4,47 @@ A new Flutter project.
 
 ## Backend
 
-The Node API now exposes authentication with JWT. Before running, configure:
+The Node API uses PostgreSQL for users, sessions, and attendance.
+
+### Quick start
+
+1) Start Postgres with Docker (recommended):
 
 ```bash
-export JWT_SECRET=supersecret
-export ALLOWED_EMAIL_DOMAINS=example.edu
+cd api_carnet
+docker compose up -d
+cp .env.example .env   # adjust if needed
+npm install
+npm run dev            # or: npm start
 ```
 
-Then start the API from `api_carnet/`:
+On startup the API will ensure the schema exists and seed sample accounts if the DB is empty.
 
-```bash
-node index.js
+Environment variables (api_carnet/.env):
+
+```ini
+# App
+PORT=3000
+JWT_SECRET=supersecret
+ALLOWED_EMAIL_DOMAINS=example.edu
+
+# Database
+# Either individual PG env vars or a single DATABASE_URL.
+# For Supabase, prefer DATABASE_URL with SSL required.
+DATABASE_URL=postgresql://<user>:<pass>@<host>:5432/postgres
 ```
 
 ### Sample users
 
-The demo comes with:
+Seeded on first run:
 
-- student: `alumno1@example.edu` / `password123`
-- teacher: `docente@example.edu` / `password123`
-- porter: `portero@example.edu` / `password123`
+- student: `alumno1@example.edu`
+- teacher: `docente@example.edu`
+- porter: `portero@example.edu`
 
-The student code is used as the main identifier across the system.
+Password for all three (by default): `password123` (change in DB as needed).
+
+The student `code` is used as the subject in tokens and to track attendance.
 
 ## Frontend
 

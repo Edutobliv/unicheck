@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mime/mime.dart' as mime;
 import 'package:http/http.dart' as http;
 
 import 'app_theme.dart';
@@ -25,6 +26,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final _roleController = TextEditingController(text: 'estudiante');
   DateTime? _expiryDate;
   Uint8List? _photoBytes;
+  String? _photoMime; // image/jpeg | image/png | image/webp
 
   final ImagePicker _picker = ImagePicker();
 
@@ -41,12 +43,61 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
-  Future<void> _pickPhoto() async {
-    final file = await _picker.pickImage(source: ImageSource.gallery);
-    if (file != null) {
-      final bytes = await file.readAsBytes();
-      setState(() => _photoBytes = bytes);
+  Future<void> _selectPhotoSource() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('Tomar foto'),
+              onTap: () => Navigator.of(context).pop(ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Elegir de galería'),
+              onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+    await _pickPhoto(source);
+  }
+
+  static const int _maxUploadBytes = 10 * 1024 * 1024; // 10 MB
+  static const Set<String> _allowedMimes = {'image/jpeg','image/png','image/webp'};
+
+  Future<void> _pickPhoto(ImageSource source) async {
+    final XFile? file = await _picker.pickImage(
+      source: source,
+      maxWidth: 1600,
+      maxHeight: 1600,
+      imageQuality: 85,
+    );
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    if (bytes.length > _maxUploadBytes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('La imagen supera 10MB. Elige otra o reduce su tamaño.')),
+      );
+      return;
     }
+    final header = bytes.length >= 12 ? bytes.sublist(0, 12) : bytes;
+    final detected = mime.lookupMimeType(file.path, headerBytes: header) ?? 'application/octet-stream';
+    if (!_allowedMimes.contains(detected)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Formato no permitido. Usa JPG, PNG o WebP.')),
+      );
+      return;
+    }
+    setState(() {
+      _photoBytes = bytes;
+      _photoMime = detected;
+    });
   }
 
   bool _isEducationalEmail(String email) {
@@ -103,7 +154,9 @@ class _RegisterPageState extends State<RegisterPage> {
         'expiresAt': expiry,
         // Always register students with the expected backend role key
         'role': 'student',
-        'photo': _photoBytes != null ? 'data:image/png;base64,' + base64Encode(_photoBytes!) : null,
+        'photo': _photoBytes != null && _photoMime != null
+            ? 'data:${_photoMime!};base64,' + base64Encode(_photoBytes!)
+            : null,
       }),
     )
         .then((resp) {
@@ -198,12 +251,12 @@ class _RegisterPageState extends State<RegisterPage> {
             GestureDetector(
               onTap: _pickExpiryDate,
               child: AbsorbPointer(
-                child: TextField(
-                  decoration: InputDecoration(
-                    labelText: 'Fecha de vencimiento',
-                    hintText: _expiryDate == null
-                        ? 'Opcional'
-                        : '${_expiryDate!.day}/${_expiryDate!.month}/${_expiryDate!.year}',
+                  child: TextField(
+                    decoration: InputDecoration(
+                      labelText: 'Fecha de vencimiento',
+                      hintText: _expiryDate == null
+                          ? 'Opcional'
+                          : '${_expiryDate!.day}/${_expiryDate!.month}/${_expiryDate!.year}',
                   ),
                 ),
               ),
@@ -211,7 +264,7 @@ class _RegisterPageState extends State<RegisterPage> {
             const SizedBox(height: 15),
             Center(
               child: GestureDetector(
-                onTap: _pickPhoto,
+                onTap: _selectPhotoSource,
                 child: Container(
                   width: 150,
                   height: 150,
@@ -221,7 +274,14 @@ class _RegisterPageState extends State<RegisterPage> {
                     color: Colors.grey.shade200,
                   ),
                   child: _photoBytes == null
-                      ? const Icon(Icons.photo_camera, size: 60)
+                      ? Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(Icons.photo_camera, size: 48),
+                            SizedBox(height: 8),
+                            Text('JPG/PNG/WebP · Máx 10MB', style: TextStyle(fontSize: 12)),
+                          ],
+                        )
                       : Image.memory(_photoBytes!, fit: BoxFit.cover),
                 ),
               ),

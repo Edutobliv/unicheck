@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: unicheck-api
+    env: node
+    plan: free
+    rootDir: api_carnet
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromSecret: DATABASE_URL
+      - key: JWT_SECRET
+        fromSecret: JWT_SECRET
+      - key: SUPABASE_URL
+        fromSecret: SUPABASE_URL
+      - key: SUPABASE_SERVICE_ROLE
+        fromSecret: SUPABASE_SERVICE_ROLE
+      - key: AVATAR_BUCKET
+        value: avatars
+      # Optional: restrict who can register/login by email domain
+      # - key: ALLOWED_EMAIL_DOMAINS
+      #   value: example.edu
+
