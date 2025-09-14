@@ -9,17 +9,17 @@ services:
     autoDeploy: true
     healthCheckPath: /health
     envVars:
+      # Provide placeholders so the blueprint validates; set real values in the Render dashboard after creation
       - key: DATABASE_URL
-        fromSecret: DATABASE_URL
+        value: ""
       - key: JWT_SECRET
-        fromSecret: JWT_SECRET
+        generateValue: true
       - key: SUPABASE_URL
-        fromSecret: SUPABASE_URL
+        value: ""
       - key: SUPABASE_SERVICE_ROLE
-        fromSecret: SUPABASE_SERVICE_ROLE
+        value: ""
       - key: AVATAR_BUCKET
         value: avatars
       # Optional: restrict who can register/login by email domain
       # - key: ALLOWED_EMAIL_DOMAINS
       #   value: example.edu
-
