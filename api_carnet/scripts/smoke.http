@@ -1,0 +1,50 @@
+@baseUrl = https://unicheck-api-qr.onrender.com
+@email = test{{$timestamp}}@example.edu
+@code = U{{$timestamp}}
+@password = P@ssw0rd123
+
+### Health
+GET {{baseUrl}}/health
+
+### Register
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "code": "{{code}}",
+  "email": "{{email}}",
+  "name": "Smoke Test",
+  "password": "{{password}}",
+  "program": "SISTEMAS"
+}
+
+### Login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+### Get signed photo URL (use token from Login response)
+GET {{baseUrl}}/users/me/photo-url
+Authorization: Bearer {{token}}
+
+### Put photo (1x1 png)
+PUT {{baseUrl}}/users/me/photo
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "photo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
+}
+
+### Get signed photo URL again
+GET {{baseUrl}}/users/me/photo-url
+Authorization: Bearer {{token}}
+
+### Delete photo
+DELETE {{baseUrl}}/users/me/photo
+Authorization: Bearer {{token}}
+

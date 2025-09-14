@@ -27,6 +27,12 @@ import {
 import { uploadUserAvatarFromDataUrl, createSignedAvatarUrl, replaceUserAvatarFromDataUrl, deleteAvatarPath } from "./storage.js";
 
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
+// Prefer an explicit public base URL, else Render's provided URL, else localhost
+const BASE_URL =
+  process.env.PUBLIC_BASE_URL ||
+  process.env.RENDER_EXTERNAL_URL ||
+  `http://localhost:${PORT}`;
 const TOKEN_TTL_SECONDS = 15; // cada token/QR dura 15 segundos
 
 // Para este MVP usaremos memoria local solo para evitar reuso de tokens efímeros
@@ -281,7 +287,7 @@ app.post("/issue-ephemeral", requireAuth("student"), async (req, res) => {
       .setProtectedHeader({ alg: "EdDSA", kid: "ed25519-key-1", typ: "JWT" })
       .setIssuedAt(now)
       .setExpirationTime(exp)
-      .setIssuer("http://localhost:" + PORT)
+      .setIssuer(BASE_URL)
       .setAudience("gate_verifier")
       .setSubject(code)
       .setJti(jti)
@@ -290,7 +296,7 @@ app.post("/issue-ephemeral", requireAuth("student"), async (req, res) => {
     usedJti.set(jti, false);
     setTimeout(() => usedJti.delete(jti), TOKEN_TTL_SECONDS * 1000 + 2000);
 
-    const qrUrl = `http://localhost:${PORT}/verify?t=${encodeURIComponent(token)}`;
+    const qrUrl = `${BASE_URL}/verify?t=${encodeURIComponent(token)}`;
     const found = await getUserByCode(code);
     const { passwordHash, ...student } = found || {};
 
@@ -311,7 +317,7 @@ app.post("/verify", async (req, res) => {
       token,
       async (header) => await importJWK(publicJwk, header.alg),
       {
-        issuer: "http://localhost:" + PORT,
+        issuer: BASE_URL,
         audience: "gate_verifier",
         clockTolerance: "5s",
       }
@@ -443,7 +449,7 @@ app.get("/prof/session/:id", requireAuth("teacher"), async (req, res) => {
   return res.json({ session, attendees });
 });
 
-app.listen(PORT, () => {
-  console.log("API QR efímero escuchando en http://localhost:" + PORT);
+app.listen(PORT, HOST, () => {
+  console.log("API QR efímero escuchando en " + BASE_URL);
 });
 

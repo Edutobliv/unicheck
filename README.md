@@ -6,6 +6,24 @@ A new Flutter project.
 
 The Node API uses PostgreSQL for users, sessions, and attendance.
 
+### Deploy on Render
+
+This repo includes a `render.yaml` blueprint for one-click deploys.
+
+- Connect your GitHub repo to Render and choose "New > Blueprint".
+- Render will detect `render.yaml` and create the web service pointing to `api_carnet/`.
+- Add the following environment variables as Render Secrets on the service:
+  - `DATABASE_URL`: Supabase Postgres connection string (with `sslmode=require`).
+  - `JWT_SECRET`: a strong random string.
+  - `SUPABASE_URL`: your Supabase project URL.
+  - `SUPABASE_SERVICE_ROLE`: your Supabase service role key.
+  - Optional `AVATAR_BUCKET` (default `avatars`).
+
+Notes:
+- The API exposes `/health` for Render’s health checks.
+- The server uses `PUBLIC_BASE_URL` or Render’s `RENDER_EXTERNAL_URL` to build links and JWT issuer; no action needed unless you want to override with a custom domain.
+- Create a private bucket in Supabase Storage named `avatars` (or your custom `AVATAR_BUCKET`). The API generates short‑lived signed URLs for access.
+
 ### Quick start
 
 1) Start Postgres with Docker (recommended):
