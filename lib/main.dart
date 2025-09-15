@@ -137,6 +137,7 @@ class _CarnetPageState extends State<CarnetPage> {
         _maybeShowNoPhotoNotice();
       } else {
         if (resp.statusCode == 401) {
+          if (await _tryRefreshToken()) { await _fetchQr(); return; }
           _toast('Sesión expirada. Por favor ingresa nuevamente.');
           await _logout();
           return;
@@ -148,6 +149,27 @@ class _CarnetPageState extends State<CarnetPage> {
     }
   }
 
+  Future<bool> _tryRefreshToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rt = prefs.getString('refreshToken');
+      if (rt == null) return false;
+      final resp = await http.post(
+        Uri.parse('$_baseUrl/auth/refresh'),
+        headers: {'Content-Type':'application/json'},
+        body: jsonEncode({'refreshToken': rt}),
+      ).timeout(const Duration(seconds: 10));
+      if (resp.statusCode == 200) {
+        final m = jsonDecode(resp.body) as Map<String, dynamic>;
+        await prefs.setString('token', m['token'] as String);
+        if (m['refreshToken'] is String) {
+          await prefs.setString('refreshToken', m['refreshToken'] as String);
+        }
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
   Future<void> _maybeRefreshSignedPhoto(SharedPreferences? givenPrefs) async {
     try {
       final prefs = givenPrefs ?? await SharedPreferences.getInstance();

@@ -25,6 +25,13 @@ import {
   updateUserPhotoPath,
   updateUserExpiry,
   getPool,
+  addAttendanceManual,
+  removeAttendance,
+  searchStudents,
+  storeRefreshToken,
+  revokeRefreshToken,
+  getRefreshToken,
+  getStudentByEmailInsensitive,
 } from "./db.js";
 import { uploadUserAvatarFromDataUrl, createSignedAvatarUrl, replaceUserAvatarFromDataUrl, deleteAvatarPath, supabaseAdmin } from "./storage.js";
 
@@ -46,7 +53,19 @@ const ROLE_TTL = {
 };
 function ttlForRole(role) { return ROLE_TTL[role] || SESSION_TTL; }
 
+const REFRESH_TTL = process.env.REFRESH_TTL || '30d';
+
 const usedJti = new Map();
+
+function parseDurationToSeconds(s) {
+  if (!s || typeof s !== 'string') return 0;
+  const m = /^([0-9]+)\s*([smhd])$/.exec(s.trim());
+  if (!m) return 0;
+  const n = parseInt(m[1], 10);
+  const u = m[2];
+  const map = { s: 1, m: 60, h: 3600, d: 86400 };
+  return n * (map[u] || 0);
+}
 
 // Permitir cualquier dominio por defecto; si se define ALLOWED_EMAIL_DOMAINS,
 // se restringe a los listados (separados por comas)
@@ -189,6 +208,20 @@ app.post("/auth/login", async (req, res) => {
       .setSubject(user.code)
       .sign(new TextEncoder().encode(JWT_SECRET));
 
+    // Refresh token (rotation)
+    const refreshJti = uuidv4();
+    const nowSec = Math.floor(Date.now()/1000);
+    const refreshExpSec = nowSec + (parseDurationToSeconds(REFRESH_TTL) || (30*24*3600));
+    const refreshToken = await new SignJWT({ scope: 'refresh' })
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+      .setIssuedAt(nowSec)
+      .setExpirationTime(refreshExpSec)
+      .setIssuer('api_carnet')
+      .setSubject(user.code)
+      .setJti(refreshJti)
+      .sign(new TextEncoder().encode(JWT_SECRET));
+    try { await storeRefreshToken(refreshJti, user.code, refreshExpSec); } catch {}
+
     // If the user has a private avatar path, create a short-lived signed URL
     let signedPhoto = undefined;
     try {
@@ -197,6 +230,7 @@ app.post("/auth/login", async (req, res) => {
 
     res.json({
       token,
+      refreshToken,
       user: {
         code: user.code,
         email: user.email,
@@ -210,6 +244,52 @@ app.post("/auth/login", async (req, res) => {
   } catch (e) {
     console.error('login_error', e);
     return res.status(500).json({ error: 'login_failed', message: 'Error del servidor' });
+  }
+});
+
+// Refresh access token using refresh token
+app.post('/auth/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body || {};
+    if (!refreshToken) return res.status(400).json({ error: 'missing_refresh_token' });
+    const { payload } = await jwtVerify(refreshToken, new TextEncoder().encode(JWT_SECRET), { issuer: 'api_carnet' });
+    if (payload.scope !== 'refresh') return res.status(400).json({ error: 'invalid_scope' });
+    const jti = payload.jti;
+    const sub = payload.sub;
+    if (!jti || !sub) return res.status(400).json({ error: 'invalid_token' });
+    const row = await getRefreshToken(jti);
+    const now = new Date();
+    if (!row || row.revoked || (row.expires_at && now > new Date(row.expires_at))) {
+      return res.status(401).json({ error: 'refresh_invalid' });
+    }
+    try { await revokeRefreshToken(jti); } catch {}
+
+    const user = await getUserByCode(sub);
+    if (!user) return res.status(404).json({ error: 'user_not_found' });
+    const access = await new SignJWT({ role: user.role })
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+      .setIssuedAt()
+      .setExpirationTime(ttlForRole(user.role))
+      .setIssuer('api_carnet')
+      .setSubject(user.code)
+      .sign(new TextEncoder().encode(JWT_SECRET));
+
+    const newJti = uuidv4();
+    const nowSec = Math.floor(Date.now()/1000);
+    const refreshExpSec = nowSec + (parseDurationToSeconds(REFRESH_TTL) || (30*24*3600));
+    const newRefresh = await new SignJWT({ scope: 'refresh' })
+      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+      .setIssuedAt(nowSec)
+      .setExpirationTime(refreshExpSec)
+      .setIssuer('api_carnet')
+      .setSubject(user.code)
+      .setJti(newJti)
+      .sign(new TextEncoder().encode(JWT_SECRET));
+    try { await storeRefreshToken(newJti, user.code, refreshExpSec); } catch {}
+
+    return res.json({ token: access, refreshToken: newRefresh });
+  } catch (e) {
+    return res.status(401).json({ error: 'invalid_refresh' });
   }
 });
 
@@ -546,6 +626,53 @@ app.get("/prof/session/:id", requireAuth("teacher"), async (req, res) => {
   if (!session) return res.status(404).json({ error: "session_not_found" });
   const attendees = await getAttendance(sessionId);
   return res.json({ session, attendees });
+});
+
+// Añadir asistencia manual por profesor
+app.post('/prof/attendance/add', requireAuth('teacher'), async (req, res) => {
+  try {
+    const { sessionId, code, email } = req.body || {};
+    if (!sessionId || (!code && !email)) return res.status(400).json({ error: 'missing_params' });
+    const session = await getSession(sessionId);
+    if (!session) return res.status(404).json({ error: 'session_not_found' });
+    if (session.teacherCode !== req.user.code) return res.status(403).json({ error: 'forbidden' });
+    // Resolver estudiante por código o email
+    let student = null;
+    if (code) student = await getUserByCode(code);
+    if (!student && email) student = await getUserByEmail(email);
+    if (!student || student.role !== 'student') return res.status(404).json({ error: 'student_not_found' });
+    const entry = await addAttendanceManual(sessionId, student.code, Math.floor(Date.now()/1000), req.user.code);
+    return res.json({ ok: true, entry });
+  } catch (e) {
+    return res.status(500).json({ error: 'manual_add_failed' });
+  }
+});
+
+// Eliminar asistencia de un estudiante en la sesión
+app.delete('/prof/attendance', requireAuth('teacher'), async (req, res) => {
+  try {
+    const { sessionId, studentCode } = req.body || {};
+    if (!sessionId || !studentCode) return res.status(400).json({ error: 'missing_params' });
+    const session = await getSession(sessionId);
+    if (!session) return res.status(404).json({ error: 'session_not_found' });
+    if (session.teacherCode !== req.user.code) return res.status(403).json({ error: 'forbidden' });
+    await removeAttendance(sessionId, studentCode);
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ error: 'remove_failed' });
+  }
+});
+
+// Autocomplete de estudiantes (email/name). Sólo para docente
+app.get('/prof/students/search', requireAuth('teacher'), async (req, res) => {
+  try {
+    const q = String(req.query?.q || '').trim();
+    if (!q) return res.json({ items: [] });
+    const items = await searchStudents(q, 10);
+    return res.json({ items });
+  } catch (e) {
+    return res.status(500).json({ error: 'search_failed' });
+  }
 });
 
 app.listen(PORT, HOST, () => {

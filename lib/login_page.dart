@@ -95,6 +95,9 @@ class _LoginPageState extends State<LoginPage> {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('token', data['token'] as String);
+        if (data['refreshToken'] is String) {
+          await prefs.setString('refreshToken', data['refreshToken'] as String);
+        }
         final user = (data['user'] as Map).cast<String, dynamic>();
         final code = user['code'] as String;
         await prefs.setString('role', user['role'] as String);

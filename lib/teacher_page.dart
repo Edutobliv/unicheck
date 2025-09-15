@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -9,14 +9,15 @@ import 'api_config.dart';
 
 class TeacherPage extends StatefulWidget {
   const TeacherPage({super.key});
-
   @override
   State<TeacherPage> createState() => _TeacherPageState();
 }
 
 class _TeacherPageState extends State<TeacherPage> {
   final String _baseUrl = ApiConfig.baseUrl;
-  final _durationController = TextEditingController(text: '10'); // minutos
+
+  // Controles de sesión
+  final TextEditingController _durationController = TextEditingController(text: '10'); // minutos
   String? _sessionId;
   String? _qrText;
   int? _expiresAt;
@@ -24,21 +25,28 @@ class _TeacherPageState extends State<TeacherPage> {
   List<Map<String, dynamic>> _attendees = [];
   Timer? _pollTimer;
 
-  @override
-  void initState() {
-    super.initState();
-  }
+  // Añadir/eliminar asistentes manualmente
+  final TextEditingController _addController = TextEditingController();
+  List<Map<String, String>> _suggestions = [];
+  Timer? _debounce;
 
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _debounce?.cancel();
     _durationController.dispose();
+    _addController.dispose();
     super.dispose();
   }
 
   Future<String?> _token() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('token');
+  }
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _startSession() async {
@@ -48,21 +56,17 @@ class _TeacherPageState extends State<TeacherPage> {
       final minutes = int.tryParse(_durationController.text.trim());
       final ttlSeconds = (minutes != null && minutes > 0) ? minutes * 60 : 600;
       final resp = await http.post(
-        Uri.parse("$_baseUrl/prof/start-session"),
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer $token",
-        },
-        body: jsonEncode({
-          "ttlSeconds": ttlSeconds,
-        }),
+        Uri.parse('$_baseUrl/prof/start-session'),
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+        body: jsonEncode({'ttlSeconds': ttlSeconds}),
       );
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final session = (data['session'] as Map).cast<String, dynamic>();
         setState(() {
-          _sessionId = (data['session'] as Map)['id'] as String;
-          _startedAt = (data['session'] as Map)['startedAt'] as int?;
-          _expiresAt = (data['session'] as Map)['expiresAt'] as int?;
+          _sessionId = session['id'] as String;
+          _startedAt = session['startedAt'] as int?;
+          _expiresAt = session['expiresAt'] as int?;
           _qrText = data['qrText'] as String;
           _attendees = [];
         });
@@ -82,19 +86,15 @@ class _TeacherPageState extends State<TeacherPage> {
       final token = await _token();
       if (token == null) return;
       final resp = await http.post(
-        Uri.parse("$_baseUrl/prof/end-session"),
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer $token",
-        },
-        body: jsonEncode({
-          "sessionId": id,
-        }),
+        Uri.parse('$_baseUrl/prof/end-session'),
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+        body: jsonEncode({'sessionId': id}),
       );
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final session = (data['session'] as Map).cast<String, dynamic>();
         setState(() {
-          _expiresAt = (data['session'] as Map)['expiresAt'] as int?;
+          _expiresAt = session['expiresAt'] as int?;
         });
         _pollTimer?.cancel();
         await _fetchAttendance();
@@ -118,14 +118,15 @@ class _TeacherPageState extends State<TeacherPage> {
       final token = await _token();
       if (token == null) return;
       final resp = await http.get(
-        Uri.parse("$_baseUrl/prof/session/$sessionId"),
-        headers: {
-          "Authorization": "Bearer $token",
-        },
+        Uri.parse('$_baseUrl/prof/session/$sessionId'),
+        headers: {'Authorization': 'Bearer $token'},
       );
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final list = (data['attendees'] as List).cast<Map>().map((e) => e.cast<String, dynamic>()).toList();
+        final list = (data['attendees'] as List)
+            .cast<Map>()
+            .map((e) => e.cast<String, dynamic>())
+            .toList();
         setState(() {
           _attendees = list;
           _expiresAt = (data['session'] as Map)['expiresAt'] as int?;
@@ -134,9 +135,72 @@ class _TeacherPageState extends State<TeacherPage> {
     } catch (_) {}
   }
 
-  void _toast(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  // Eliminar asistencia
+  Future<void> _removeAttendee(String studentCode) async {
+    final id = _sessionId; if (id == null) return;
+    try {
+      final token = await _token(); if (token == null) return;
+      final resp = await http.delete(
+        Uri.parse('$_baseUrl/prof/attendance'),
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+        body: jsonEncode({'sessionId': id, 'studentCode': studentCode}),
+      );
+      if (resp.statusCode == 200) {
+        await _fetchAttendance();
+      } else {
+        _toast('No se pudo eliminar (${resp.statusCode})');
+      }
+    } catch (e) { _toast('Error: $e'); }
+  }
+
+  // Añadir asistencia manual
+  Future<void> _addAttendee() async {
+    final id = _sessionId; if (id == null) { _toast('Inicia una sesión primero'); return; }
+    final q = _addController.text.trim(); if (q.isEmpty) return;
+    try {
+      final token = await _token(); if (token == null) return;
+      final isNumeric = RegExp(r'^\d{4,}$').hasMatch(q);
+      final body = isNumeric ? {'sessionId': id, 'code': q} : {'sessionId': id, 'email': q};
+      final resp = await http.post(
+        Uri.parse('$_baseUrl/prof/attendance/add'),
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+        body: jsonEncode(body),
+      );
+      if (resp.statusCode == 200) {
+        _addController.clear();
+        setState(() => _suggestions = []);
+        await _fetchAttendance();
+      } else if (resp.statusCode == 404) {
+        _toast('Estudiante no encontrado');
+      } else {
+        _toast('No se pudo añadir (${resp.statusCode})');
+      }
+    } catch (e) { _toast('Error: $e'); }
+  }
+
+  // Autocomplete de estudiantes
+  Future<void> _searchSuggestions(String q) async {
+    try {
+      final token = await _token(); if (token == null) return;
+      final resp = await http.get(
+        Uri.parse('$_baseUrl/prof/students/search?q='+Uri.encodeQueryComponent(q)),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final items = (data['items'] as List)
+            .cast<Map>()
+            .map((e) => e.cast<String, dynamic>())
+            .toList();
+        setState(() {
+          _suggestions = items.map((e) => {
+            'email': (e['email'] ?? '').toString(),
+            'code' : (e['code']  ?? '').toString(),
+            'name' : (e['name']  ?? '').toString(),
+          }).toList();
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _logout() async {
@@ -225,6 +289,59 @@ class _TeacherPageState extends State<TeacherPage> {
                   : const Text('Inicia una sesión para generar el QR.'),
             ),
             const SizedBox(height: 16),
+            // Añadir asistente manualmente
+            Row(children: [
+              Expanded(
+                child: TextField(
+                  controller: _addController,
+                  decoration: const InputDecoration(
+                    labelText: 'Añadir por código o correo (solo estudiantes)',
+                    hintText: 'Ej: 470056402 o juan@upc.edu.co',
+                  ),
+                  onChanged: (v) {
+                    _debounce?.cancel();
+                    final s = v.trim();
+                    if (RegExp(r'^\d').hasMatch(s)) { setState(()=> _suggestions=[]); return; }
+                    _debounce = Timer(const Duration(milliseconds: 350), () { if (s.isNotEmpty) _searchSuggestions(s); });
+                  },
+                  onSubmitted: (_) => _addAttendee(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton.icon(
+                onPressed: _addAttendee,
+                icon: const Icon(Icons.person_add_alt_1),
+                label: const Text('Añadir'),
+              ),
+            ]),
+            if (_suggestions.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 180),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  border: Border.all(color: Theme.of(context).dividerColor),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: ListView.separated(
+                  itemCount: _suggestions.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, i) {
+                    final s = _suggestions[i];
+                    return ListTile(
+                      leading: const Icon(Icons.person_outline),
+                      title: Text(s['name']!.isNotEmpty ? s['name']! : s['email']!),
+                      subtitle: Text('${s['email']} · ${s['code']}'),
+                      onTap: () {
+                        _addController.text = s['email']!;
+                        setState(()=> _suggestions=[]);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
             const Text('Asistentes:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Expanded(
@@ -239,11 +356,25 @@ class _TeacherPageState extends State<TeacherPage> {
                           final when = a['at'] is int
                               ? DateTime.fromMillisecondsSinceEpoch((a['at'] as int) * 1000)
                               : null;
-                          return Card(
-                            child: ListTile(
-                              leading: const Icon(Icons.person),
-                              title: Text(a['name'] ?? a['code'] ?? 'Estudiante'),
-                              subtitle: Text('${a['email'] ?? ''}${when != null ? ' • ${when.toLocal()}' : ''}'),
+                          return Dismissible(
+                            key: ValueKey(a['code'] ?? i),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              color: Colors.red.shade100,
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: const Icon(Icons.delete_outline, color: Colors.red),
+                            ),
+                            onDismissed: (_) {
+                              final code = (a['code'] ?? '').toString();
+                              if (code.isNotEmpty) _removeAttendee(code);
+                            },
+                            child: Card(
+                              child: ListTile(
+                                leading: const Icon(Icons.person),
+                                title: Text(a['name'] ?? a['code'] ?? 'Estudiante'),
+                                subtitle: Text('${a['email'] ?? ''}${when != null ? ' · ${when.toLocal()}' : ''}'),
+                              ),
                             ),
                           );
                         },

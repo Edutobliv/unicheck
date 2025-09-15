@@ -78,6 +78,16 @@ export async function ensureSchema() {
   );
   create index if not exists used_jti_expires_idx on used_jti (expires_at);
 
+  -- Refresh tokens (server-side revocation)
+  create table if not exists refresh_tokens (
+    jti text primary key,
+    user_code text not null references users(code) on delete cascade,
+    created_at timestamptz default now(),
+    expires_at timestamptz not null,
+    revoked boolean not null default false
+  );
+  create index if not exists rt_user_idx on refresh_tokens (user_code);
+
   -- Gates and access events for porter flow
   create table if not exists gates (
     id uuid primary key default gen_random_uuid(),
@@ -278,6 +288,41 @@ export async function addAttendance(sessionId, studentCode, atTs) {
     : null;
 }
 
+export async function addAttendanceManual(sessionId, studentCode, atTs, recordedBy) {
+  const at = atTs ? new Date(atTs * 1000) : new Date();
+  const id = uuidv4();
+  const p = await getPool();
+  await p.query(
+    `insert into attendance (id, session_id, student_code, at, source, recorded_by)
+     values ($1,$2,$3,$4,'manual',$5) on conflict do nothing`,
+    [id, sessionId, studentCode, at, recordedBy || null]
+  );
+  // Ensure manual/source even if already existed
+  await p.query(
+    `update attendance set source='manual', recorded_by=$3
+       where session_id=$1 and student_code=$2`,
+    [sessionId, studentCode, recordedBy || null]
+  );
+  const { rows } = await p.query(
+    `select a.session_id, a.student_code as code, a.at, a.status,
+            u.email, u.name
+       from attendance a
+       left join users u on u.code = a.student_code
+      where a.session_id=$1 and a.student_code=$2`,
+    [sessionId, studentCode]
+  );
+  const row = rows[0];
+  return row
+    ? { code: row.code, email: row.email, name: row.name, at: Math.floor(new Date(row.at).getTime() / 1000), status: row.status }
+    : null;
+}
+
+export async function removeAttendance(sessionId, studentCode) {
+  const p = await getPool();
+  await p.query('delete from attendance where session_id=$1 and student_code=$2', [sessionId, studentCode]);
+  return { ok: true };
+}
+
 export async function getAttendance(sessionId) {
   const p = await getPool();
   const { rows } = await p.query(
@@ -346,4 +391,47 @@ export async function addAccessEvent({ scannedAt, studentCode, porterCode, gateC
   ];
   await p.query(sql, vals);
   return true;
+}
+
+export async function searchStudents(q, limit = 10) {
+  const p = await getPool();
+  const like = `%${q.toLowerCase()}%`;
+  const { rows } = await p.query(
+    `select code, email, name
+       from users
+      where role='student'
+        and (lower(email) like $1 or lower(name) like $1 or code like $1)
+      order by email asc
+      limit $2`,
+    [like, Math.max(1, Math.min(limit, 20))]
+  );
+  return rows;
+}
+
+export async function getStudentByEmailInsensitive(email) {
+  const p = await getPool();
+  const { rows } = await p.query(
+    `select * from users
+      where role='student' and lower(email) = lower($1)
+      limit 1`,
+    [email]
+  );
+  return mapUserRow(rows[0]);
+}
+
+export async function storeRefreshToken(jti, userCode, expTs) {
+  const p = await getPool();
+  const expiresAt = new Date(expTs * 1000);
+  await p.query('insert into refresh_tokens (jti, user_code, expires_at) values ($1,$2,$3) on conflict do nothing', [jti, userCode, expiresAt]);
+}
+
+export async function revokeRefreshToken(jti) {
+  const p = await getPool();
+  await p.query('update refresh_tokens set revoked=true where jti=$1', [jti]);
+}
+
+export async function getRefreshToken(jti) {
+  const p = await getPool();
+  const { rows } = await p.query('select * from refresh_tokens where jti=$1', [jti]);
+  return rows[0] || null;
 }
