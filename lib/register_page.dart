@@ -18,11 +18,25 @@ class RegisterPage extends StatefulWidget {
 
 class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
+  // Nombres y apellidos (validados)
+  final _firstNameController = TextEditingController();
+  final _middleNameController = TextEditingController(); // opcional
+  final _lastNameController = TextEditingController();
+  final _secondLastNameController = TextEditingController(); // opcional
   final _codeController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _programController = TextEditingController();
+  // Programa académico (selección controlada)
+  static const List<String> _programOptions = <String>[
+    'Ingenieria de Sistemas',
+    'Ingenieria Civil',
+    'Ingenieria Financiera',
+    'Administración Ambiental',
+    'Administracion Logistica',
+    'Administracion Turistica y Hotelera',
+    'Contaduria Publica',
+  ];
+  String? _selectedProgram;
   final _roleController = TextEditingController(text: 'estudiante');
   final _expiryController = TextEditingController();
 
@@ -34,11 +48,13 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   void dispose() {
-    _nameController.dispose();
+    _firstNameController.dispose();
+    _middleNameController.dispose();
+    _lastNameController.dispose();
+    _secondLastNameController.dispose();
     _codeController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _programController.dispose();
     _roleController.dispose();
     _expiryController.dispose();
     super.dispose();
@@ -150,10 +166,17 @@ class _RegisterPageState extends State<RegisterPage> {
     return null;
   }
 
-  String? _validateName(String? value) {
+  String? _validateFirstName(String? value) {
     final v = (value ?? '').trim();
-    if (v.isEmpty) return 'El nombre es obligatorio';
-    if (v.length < 3) return 'El nombre es muy corto';
+    if (v.isEmpty) return 'El primer nombre es obligatorio';
+    if (v.length < 2) return 'El primer nombre es muy corto';
+    return null;
+  }
+
+  String? _validateLastName(String? value) {
+    final v = (value ?? '').trim();
+    if (v.isEmpty) return 'El primer apellido es obligatorio';
+    if (v.length < 2) return 'El primer apellido es muy corto';
     return null;
   }
 
@@ -180,6 +203,17 @@ class _RegisterPageState extends State<RegisterPage> {
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
+    // Construir nombre completo para el backend (API espera un solo campo "name")
+    String fullName() {
+      final parts = <String>[
+        _firstNameController.text.trim(),
+        _middleNameController.text.trim(),
+        _lastNameController.text.trim(),
+        _secondLastNameController.text.trim(),
+      ].where((s) => s.isNotEmpty).toList();
+      return parts.join(' ');
+    }
+
     http
         .post(
       Uri.parse('${ApiConfig.baseUrl}/auth/register'),
@@ -187,9 +221,9 @@ class _RegisterPageState extends State<RegisterPage> {
       body: jsonEncode({
         'code': _codeController.text.trim(),
         'email': _emailController.text.trim(),
-        'name': _nameController.text.trim(),
+        'name': fullName(),
         'password': _passwordController.text,
-        'program': _programController.text.trim(),
+        'program': _selectedProgram,
         'expiresAt': expiry,
         'role': 'student',
         'photo': _photoBytes != null && _photoMime != null
@@ -263,9 +297,25 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
               const SizedBox(height: 15),
               TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Nombre'),
-                validator: _validateName,
+                controller: _firstNameController,
+                decoration: const InputDecoration(labelText: 'Primer nombre'),
+                validator: _validateFirstName,
+              ),
+              const SizedBox(height: 15),
+              TextFormField(
+                controller: _middleNameController,
+                decoration: const InputDecoration(labelText: 'Segundo nombre (opcional)'),
+              ),
+              const SizedBox(height: 15),
+              TextFormField(
+                controller: _lastNameController,
+                decoration: const InputDecoration(labelText: 'Primer apellido'),
+                validator: _validateLastName,
+              ),
+              const SizedBox(height: 15),
+              TextFormField(
+                controller: _secondLastNameController,
+                decoration: const InputDecoration(labelText: 'Segundo apellido (opcional)'),
               ),
               const SizedBox(height: 15),
               TextFormField(
@@ -285,9 +335,16 @@ class _RegisterPageState extends State<RegisterPage> {
                 validator: _validatePassword,
               ),
               const SizedBox(height: 15),
-              TextFormField(
-                controller: _programController,
+              DropdownButtonFormField<String>(
+                value: _selectedProgram,
                 decoration: const InputDecoration(labelText: 'Programa'),
+                items: _programOptions
+                    .map((p) => DropdownMenuItem<String>(value: p, child: Text(p)))
+                    .toList(),
+                onChanged: (v) => setState(() => _selectedProgram = v),
+                validator: (v) => (_selectedProgram == null || _selectedProgram!.isEmpty)
+                    ? 'Selecciona un programa'
+                    : null,
               ),
               const SizedBox(height: 15),
               TextField(
@@ -345,4 +402,3 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 }
-

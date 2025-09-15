@@ -383,8 +383,19 @@ app.post("/issue-ephemeral", requireAuth("student"), async (req, res) => {
     const qrUrl = `${BASE_URL}/verify?t=${encodeURIComponent(token)}`;
     const found = await getUserByCode(code);
     const { passwordHash, ...student } = found || {};
+    // Include a signed photo URL to avoid an extra request from the client
+    let photoSigned = null;
+    const photoTtl = 300; // 5 minutes
+    try {
+      if (student?.photoUrl) photoSigned = await createSignedAvatarUrl(student.photoUrl, photoTtl);
+    } catch {}
+    const studentOut = {
+      ...student,
+      photoUrl: photoSigned || student?.photoUrl || null,
+      photoUrlExpiresIn: photoSigned ? photoTtl : 0,
+    };
 
-    res.json({ token, qrUrl, ttl: TOKEN_TTL_SECONDS, student, ephemeralCode: found?.ephemeralCode });
+    res.json({ token, qrUrl, ttl: TOKEN_TTL_SECONDS, student: studentOut, ephemeralCode: found?.ephemeralCode });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "issue_failed" });

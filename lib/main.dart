@@ -112,6 +112,21 @@ class _CarnetPageState extends State<CarnetPage> {
           _student = (data["student"] as Map?)?.cast<String, dynamic>();
           _ephemeralCode = data["ephemeralCode"] as String?;
         });
+        // Guardar foto firmada y expiración si viene en la respuesta
+        final stu = _student;
+        if (stu != null) {
+          final signed = stu['photoUrl'] as String?;
+          final expIn = (stu['photoUrlExpiresIn'] as num?)?.toInt() ?? 0;
+          if (signed != null && signed.isNotEmpty && expIn > 0) {
+            final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+            final expAt = now + expIn;
+            await prefs.setString('photoUrl', signed);
+            await prefs.setInt('photoUrlExp', expAt);
+          } else {
+            // Si no vino firmada, intenta refrescar si está expirada o no existe
+            await _maybeRefreshSignedPhoto(prefs);
+          }
+        }
         _startCountdown();
       } else {
         _toast("No se pudo generar el QR (${resp.statusCode})");
@@ -119,6 +134,43 @@ class _CarnetPageState extends State<CarnetPage> {
     } catch (e) {
       _toast("Error de red: $e");
     }
+  }
+
+  Future<void> _maybeRefreshSignedPhoto(SharedPreferences? givenPrefs) async {
+    try {
+      final prefs = givenPrefs ?? await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) return;
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final expAt = prefs.getInt('photoUrlExp') ?? 0;
+      final cached = prefs.getString('photoUrl');
+      final stillValid = cached != null && cached.isNotEmpty && expAt > now + 5;
+      if (stillValid) {
+        if (!mounted) return;
+        setState(() {
+          (_student ??= <String, dynamic>{})['photoUrl'] = cached;
+        });
+        return;
+      }
+      final resp = await http.get(
+        Uri.parse("$_baseUrl/users/me/photo-url"),
+        headers: { 'Authorization': 'Bearer $token' },
+      ).timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) {
+        final m = jsonDecode(resp.body) as Map<String, dynamic>;
+        final signed = m['photoUrl'] as String?;
+        final expIn = (m['expiresIn'] as num?)?.toInt() ?? 0;
+        if (signed != null && signed.isNotEmpty && expIn > 0) {
+          final newExp = now + expIn;
+          await prefs.setString('photoUrl', signed);
+          await prefs.setInt('photoUrlExp', newExp);
+          if (!mounted) return;
+          setState(() {
+            (_student ??= <String, dynamic>{})['photoUrl'] = signed;
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   void _startCountdown() {
@@ -434,7 +486,8 @@ class _FotoBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Image img;
-    if (photoUrl != null && photoUrl!.isNotEmpty) {
+    bool looksLikeUrl(String s) => s.startsWith('http://') || s.startsWith('https://') || s.startsWith('data:image');
+    if (photoUrl != null && photoUrl!.isNotEmpty && looksLikeUrl(photoUrl!)) {
       if (photoUrl!.startsWith('data:image')) {
         final b64 = photoUrl!.split(',').last;
         img = Image.memory(base64Decode(b64), fit: BoxFit.cover);
