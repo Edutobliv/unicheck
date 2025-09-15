@@ -96,8 +96,9 @@ class _LoginPageState extends State<LoginPage> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('token', data['token'] as String);
         final user = (data['user'] as Map).cast<String, dynamic>();
+        final code = user['code'] as String;
         await prefs.setString('role', user['role'] as String);
-        await prefs.setString('code', user['code'] as String);
+        await prefs.setString('code', code);
         await prefs.setString('name', user['name'] as String);
         if (user['expiresAt'] is String) {
           await prefs.setString('expiresAt', user['expiresAt'] as String);
@@ -105,8 +106,17 @@ class _LoginPageState extends State<LoginPage> {
         if (user['program'] is String) {
           await prefs.setString('program', user['program'] as String);
         }
+        // Limpiar caché global previa y cachear por usuario
+        await prefs.remove('photoUrl');
+        await prefs.remove('photoUrlExp');
         if (user['photoUrl'] is String) {
-          await prefs.setString('photoUrl', user['photoUrl'] as String);
+          await prefs.setString('photoUrl:'+code, user['photoUrl'] as String);
+          // TTL aproximado (login firma por ~300s); si se requiere precisión, se puede exponer desde el backend
+          final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+          await prefs.setInt('photoUrlExp:'+code, now + 300);
+        } else {
+          await prefs.remove('photoUrl:'+code);
+          await prefs.remove('photoUrlExp:'+code);
         }
         // En web, solo profesores pueden continuar
         final role = user['role'] as String?;

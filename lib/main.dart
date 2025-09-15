@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:mime/mime.dart' as mime;
 import 'login_page.dart';
 import 'teacher_page.dart';
 import 'student_checkin_scanner.dart';
@@ -55,6 +57,7 @@ class _CarnetPageState extends State<CarnetPage> {
   Timer? _timer;
   Map<String, dynamic>? _student;
   String? _ephemeralCode;
+  final ImagePicker _picker = ImagePicker();
 
   // Colores / estilos
   static const Color rojoMarca = Color(0xFFB0191D);
@@ -77,13 +80,15 @@ class _CarnetPageState extends State<CarnetPage> {
   Future<void> _primeFromPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      final code = prefs.getString('code');
+      final cachedPhoto = code != null ? prefs.getString('photoUrl:'+code) : null;
       setState(() {
         _student = {
-          if (prefs.getString('code') != null) 'code': prefs.getString('code'),
+          if (code != null) 'code': code,
           if (prefs.getString('name') != null) 'name': prefs.getString('name'),
           if (prefs.getString('program') != null) 'program': prefs.getString('program'),
           if (prefs.getString('expiresAt') != null) 'expiresAt': prefs.getString('expiresAt'),
-          if (prefs.getString('photoUrl') != null) 'photoUrl': prefs.getString('photoUrl'),
+          if (cachedPhoto != null) 'photoUrl': cachedPhoto,
         }..removeWhere((k, v) => v == null);
       });
     } catch (_) {}
@@ -117,18 +122,25 @@ class _CarnetPageState extends State<CarnetPage> {
         if (stu != null) {
           final signed = stu['photoUrl'] as String?;
           final expIn = (stu['photoUrlExpiresIn'] as num?)?.toInt() ?? 0;
-          if (signed != null && signed.isNotEmpty && expIn > 0) {
+          final code = (stu['code'] as String?) ?? prefs.getString('code');
+          if (code != null && signed != null && signed.isNotEmpty && expIn > 0) {
             final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
             final expAt = now + expIn;
-            await prefs.setString('photoUrl', signed);
-            await prefs.setInt('photoUrlExp', expAt);
+            await prefs.setString('photoUrl:'+code, signed);
+            await prefs.setInt('photoUrlExp:'+code, expAt);
           } else {
             // Si no vino firmada, intenta refrescar si está expirada o no existe
             await _maybeRefreshSignedPhoto(prefs);
           }
         }
         _startCountdown();
+        _maybeShowNoPhotoNotice();
       } else {
+        if (resp.statusCode == 401) {
+          _toast('Sesión expirada. Por favor ingresa nuevamente.');
+          await _logout();
+          return;
+        }
         _toast("No se pudo generar el QR (${resp.statusCode})");
       }
     } catch (e) {
@@ -141,9 +153,10 @@ class _CarnetPageState extends State<CarnetPage> {
       final prefs = givenPrefs ?? await SharedPreferences.getInstance();
       final token = prefs.getString('token');
       if (token == null) return;
+      final code = prefs.getString('code');
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      final expAt = prefs.getInt('photoUrlExp') ?? 0;
-      final cached = prefs.getString('photoUrl');
+      final expAt = code != null ? (prefs.getInt('photoUrlExp:'+code) ?? 0) : 0;
+      final cached = code != null ? prefs.getString('photoUrl:'+code) : null;
       final stillValid = cached != null && cached.isNotEmpty && expAt > now + 5;
       if (stillValid) {
         if (!mounted) return;
@@ -162,8 +175,10 @@ class _CarnetPageState extends State<CarnetPage> {
         final expIn = (m['expiresIn'] as num?)?.toInt() ?? 0;
         if (signed != null && signed.isNotEmpty && expIn > 0) {
           final newExp = now + expIn;
-          await prefs.setString('photoUrl', signed);
-          await prefs.setInt('photoUrlExp', newExp);
+          if (code != null) {
+            await prefs.setString('photoUrl:'+code, signed);
+            await prefs.setInt('photoUrlExp:'+code, newExp);
+          }
           if (!mounted) return;
           setState(() {
             (_student ??= <String, dynamic>{})['photoUrl'] = signed;
@@ -171,6 +186,124 @@ class _CarnetPageState extends State<CarnetPage> {
         }
       }
     } catch (_) {}
+  }
+
+  void _maybeShowNoPhotoNotice() {
+    final hasUrl = (_student?['photoUrl'] as String?)?.isNotEmpty == true;
+    if (!hasUrl) {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.clearMaterialBanners();
+      messenger.showMaterialBanner(
+        MaterialBanner(
+          content: const Text('Por favor sube una foto de perfil para tu carnet.'),
+          leading: const Icon(Icons.info_outline),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                messenger.hideCurrentMaterialBanner();
+                await _pickAndUploadPhoto();
+              },
+              child: const Text('Subir foto'),
+            ),
+            IconButton(
+              tooltip: 'Cerrar',
+              icon: const Icon(Icons.close),
+              onPressed: () => messenger.hideCurrentMaterialBanner(),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  Future<void> _pickAndUploadPhoto() async {
+    try {
+      // Elegir fuente
+      final source = await showModalBottomSheet<ImageSource>(
+        context: context,
+        builder: (_) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_camera),
+                title: const Text('Tomar foto'),
+                onTap: () => Navigator.of(context).pop(ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Elegir de galería'),
+                onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (source == null) return;
+
+      final XFile? file = await _picker.pickImage(
+        source: source,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 85,
+      );
+      if (file == null) return;
+
+      final bytes = await file.readAsBytes();
+      // Validación ligera (el backend reoptimiza a <=3MB)
+      if (bytes.length > 20 * 1024 * 1024) {
+        _toast('La imagen es muy grande (>20MB).');
+        return;
+      }
+      final header = bytes.length >= 12 ? bytes.sublist(0, 12) : bytes;
+      final detected = mime.lookupMimeType(file.path, headerBytes: header) ?? 'application/octet-stream';
+      if (!{'image/jpeg','image/png','image/webp'}.contains(detected)) {
+        _toast('Formato no permitido. Usa JPG, PNG o WebP.');
+        return;
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      final code = prefs.getString('code');
+      if (token == null || code == null) {
+        _toast('Sesión no válida. Ingresa nuevamente.');
+        await _logout();
+        return;
+      }
+
+      final dataUrl = 'data:$detected;base64,' + base64Encode(bytes);
+      final resp = await http.put(
+        Uri.parse('$_baseUrl/users/me/photo'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'photo': dataUrl}),
+      ).timeout(const Duration(seconds: 15));
+
+      if (resp.statusCode == 200) {
+        final body = jsonDecode(resp.body) as Map<String, dynamic>;
+        final signed = body['photoUrl'] as String?;
+        final expIn = (body['expiresIn'] as num?)?.toInt() ?? 0;
+        if (signed != null && signed.isNotEmpty) {
+          final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+          await prefs.setString('photoUrl:'+code, signed);
+          if (expIn > 0) await prefs.setInt('photoUrlExp:'+code, now + expIn);
+          if (!mounted) return;
+          setState(() {
+            (_student ??= <String, dynamic>{})['photoUrl'] = signed;
+          });
+          _toast('Foto actualizada.');
+        }
+      } else if (resp.statusCode == 401) {
+        _toast('Sesión expirada. Ingresa nuevamente.');
+        await _logout();
+      } else {
+        _toast('No se pudo subir la foto (${resp.statusCode}).');
+      }
+    } catch (e) {
+      _toast('Error al subir la foto: $e');
+    }
   }
 
   void _startCountdown() {
@@ -198,6 +331,14 @@ class _CarnetPageState extends State<CarnetPage> {
 
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
+    final code = prefs.getString('code');
+    if (code != null) {
+      await prefs.remove('photoUrl:'+code);
+      await prefs.remove('photoUrlExp:'+code);
+    }
+    // Limpieza preventiva de llaves globales antiguas
+    await prefs.remove('photoUrl');
+    await prefs.remove('photoUrlExp');
     await prefs.remove('token');
     await prefs.remove('role');
     await prefs.remove('name');

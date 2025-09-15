@@ -36,8 +36,16 @@ const BASE_URL =
   process.env.RENDER_EXTERNAL_URL ||
   `http://localhost:${PORT}`;
 const TOKEN_TTL_SECONDS = 15; // cada token/QR dura 15 segundos
+const SESSION_TTL = process.env.JWT_TTL || '24h'; // duración del JWT de sesión (login)
 
 // Para este MVP usaremos memoria local solo para evitar reuso de tokens efímeros
+const ROLE_TTL = {
+  student: process.env.JWT_TTL_STUDENT || '15m',
+  teacher: process.env.JWT_TTL_TEACHER || '1h',
+  porter:  process.env.JWT_TTL_PORTER  || '1h',
+};
+function ttlForRole(role) { return ROLE_TTL[role] || SESSION_TTL; }
+
 const usedJti = new Map();
 
 // Permitir cualquier dominio por defecto; si se define ALLOWED_EMAIL_DOMAINS,
@@ -66,32 +74,9 @@ let publicJwk;
   // Initialize DB schema and seed demo users if empty
   try {
     await ensureSchema();
-    await seedUsersIfEmpty([
-      {
-        code: 'U20230001',
-        email: 'alumno1@example.edu',
-        name: 'Alumno Uno',
-        role: 'student',
-        program: 'INGENIERIA DE SISTEMAS',
-        expiresAt: '30/06/2025',
-        photoUrl: null,
-        passwordHash: '$2b$10$kex/FEd9ELMutckwBETx2u2E52FdIKsE8YGvXSw02k6BVZpEvGatS'
-      },
-      {
-        code: 'DOC123',
-        email: 'docente@example.edu',
-        name: 'Docente Uno',
-        role: 'teacher',
-        passwordHash: '$2b$10$kex/FEd9ELMutckwBETx2u2E52FdIKsE8YGvXSw02k6BVZpEvGatS'
-      },
-      {
-        code: 'PORT001',
-        email: 'portero@example.edu',
-        name: 'Portero Uno',
-        role: 'porter',
-        passwordHash: '$2b$10$kex/FEd9ELMutckwBETx2u2E52FdIKsE8YGvXSw02k6BVZpEvGatS'
-      }
-    ]);
+    // Ya no sembramos usuarios demo aquí; la BD productiva tiene sus registros.
+    // Si necesitas poblar en desarrollo, usa seedUsersIfEmpty() en scripts separados.
+    await seedUsersIfEmpty();
   } catch (e) {
     console.error('DB init error:', e);
   }
@@ -199,7 +184,7 @@ app.post("/auth/login", async (req, res) => {
     const token = await new SignJWT({ role: user.role })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setIssuedAt()
-      .setExpirationTime("1h")
+      .setExpirationTime(ttlForRole(user.role))
       .setIssuer("api_carnet")
       .setSubject(user.code)
       .sign(new TextEncoder().encode(JWT_SECRET));
@@ -566,4 +551,3 @@ app.get("/prof/session/:id", requireAuth("teacher"), async (req, res) => {
 app.listen(PORT, HOST, () => {
   console.log("API QR efímero escuchando en " + BASE_URL);
 });
-

@@ -59,6 +59,10 @@ Variables de entorno clave (`api_carnet/.env` o Render):
 - `DATABASE_URL` (recomendado Pooler de Supabase):
   `postgresql://<user>.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres?sslmode=require&options=project%3D<ref>`
 - `JWT_SECRET`: secreto fuerte para firmar tokens de sesión.
+- `JWT_TTL` (opcional): duración genérica del token de sesión (fallback, por defecto `12h`).
+- `JWT_TTL_STUDENT` (opcional, default `30m`)
+- `JWT_TTL_TEACHER` (opcional, default `1h`)
+- `JWT_TTL_PORTER` (opcional, default `1h`)
 - `SUPABASE_URL`: `https://<ref>.supabase.co`.
 - `SUPABASE_SERVICE_ROLE`: clave `service_role` del proyecto (mantener en secreto; sólo servidor).
 - `AVATAR_BUCKET` (opcional): nombre de bucket privado (default `avatars`).
