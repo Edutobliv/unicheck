@@ -16,8 +16,7 @@ class TeacherPage extends StatefulWidget {
 class _TeacherPageState extends State<TeacherPage> {
   final String _baseUrl = ApiConfig.baseUrl;
 
-  // Controles de sesión
-  final TextEditingController _durationController = TextEditingController(text: '10'); // minutos
+  final TextEditingController _durationController = TextEditingController(text: '10');
   String? _sessionId;
   String? _qrText;
   int? _expiresAt;
@@ -25,7 +24,7 @@ class _TeacherPageState extends State<TeacherPage> {
   List<Map<String, dynamic>> _attendees = [];
   Timer? _pollTimer;
 
-  // Añadir/eliminar asistentes manualmente
+  // Sugerencias y alta manual
   final TextEditingController _addController = TextEditingController();
   List<Map<String, String>> _suggestions = [];
   Timer? _debounce;
@@ -72,7 +71,7 @@ class _TeacherPageState extends State<TeacherPage> {
         });
         _startPolling();
       } else {
-        _toast('No se pudo iniciar la sesión (${resp.statusCode})');
+        _toast('No se pudo iniciar la sesion ('+resp.statusCode.toString()+')');
       }
     } catch (e) {
       _toast('Error: $e');
@@ -93,17 +92,13 @@ class _TeacherPageState extends State<TeacherPage> {
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final session = (data['session'] as Map).cast<String, dynamic>();
-        setState(() {
-          _expiresAt = session['expiresAt'] as int?;
-        });
+        setState(() { _expiresAt = session['expiresAt'] as int?; });
         _pollTimer?.cancel();
         await _fetchAttendance();
       } else {
-        _toast('No se pudo finalizar (${resp.statusCode})');
+        _toast('No se pudo finalizar ('+resp.statusCode.toString()+')');
       }
-    } catch (e) {
-      _toast('Error: $e');
-    }
+    } catch (e) { _toast('Error: $e'); }
   }
 
   void _startPolling() {
@@ -112,21 +107,16 @@ class _TeacherPageState extends State<TeacherPage> {
   }
 
   Future<void> _fetchAttendance() async {
-    final sessionId = _sessionId;
-    if (sessionId == null) return;
+    final sessionId = _sessionId; if (sessionId == null) return;
     try {
-      final token = await _token();
-      if (token == null) return;
+      final token = await _token(); if (token == null) return;
       final resp = await http.get(
         Uri.parse('$_baseUrl/prof/session/$sessionId'),
         headers: {'Authorization': 'Bearer $token'},
       );
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final list = (data['attendees'] as List)
-            .cast<Map>()
-            .map((e) => e.cast<String, dynamic>())
-            .toList();
+        final list = (data['attendees'] as List).cast<Map>().map((e) => e.cast<String, dynamic>()).toList();
         setState(() {
           _attendees = list;
           _expiresAt = (data['session'] as Map)['expiresAt'] as int?;
@@ -135,8 +125,7 @@ class _TeacherPageState extends State<TeacherPage> {
     } catch (_) {}
   }
 
-  // Eliminar asistencia
-  Future<void> _removeAttendee(String studentCode) async {
+  Future<void> _removeAttendee(String studentCode, {String? label}) async {
     final id = _sessionId; if (id == null) return;
     try {
       final token = await _token(); if (token == null) return;
@@ -146,16 +135,48 @@ class _TeacherPageState extends State<TeacherPage> {
         body: jsonEncode({'sessionId': id, 'studentCode': studentCode}),
       );
       if (resp.statusCode == 200) {
+        // Actualiza lista y ofrece Undo
         await _fetchAttendance();
+        if (!mounted) return;
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Eliminado ${label ?? studentCode}'),
+            action: SnackBarAction(
+              label: 'Deshacer',
+              onPressed: () async {
+                await _addByCode(studentCode);
+              },
+            ),
+            duration: const Duration(seconds: 4),
+          ),
+        );
       } else {
-        _toast('No se pudo eliminar (${resp.statusCode})');
+        _toast('No se pudo eliminar ('+resp.statusCode.toString()+')');
       }
     } catch (e) { _toast('Error: $e'); }
   }
 
-  // Añadir asistencia manual
+  Future<void> _addByCode(String code) async {
+    final id = _sessionId; if (id == null) return;
+    try {
+      final token = await _token(); if (token == null) return;
+      final resp = await http.post(
+        Uri.parse('$_baseUrl/prof/attendance/add'),
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+        body: jsonEncode({'sessionId': id, 'code': code}),
+      );
+      if (resp.statusCode == 200) {
+        await _fetchAttendance();
+      } else {
+        _toast('No se pudo deshacer ('+resp.statusCode.toString()+')');
+      }
+    } catch (e) { _toast('Error: $e'); }
+  }
+
   Future<void> _addAttendee() async {
-    final id = _sessionId; if (id == null) { _toast('Inicia una sesión primero'); return; }
+    final id = _sessionId; if (id == null) { _toast('Inicia una sesion primero'); return; }
     final q = _addController.text.trim(); if (q.isEmpty) return;
     try {
       final token = await _token(); if (token == null) return;
@@ -173,12 +194,11 @@ class _TeacherPageState extends State<TeacherPage> {
       } else if (resp.statusCode == 404) {
         _toast('Estudiante no encontrado');
       } else {
-        _toast('No se pudo añadir (${resp.statusCode})');
+        _toast('No se pudo anadir ('+resp.statusCode.toString()+')');
       }
     } catch (e) { _toast('Error: $e'); }
   }
 
-  // Autocomplete de estudiantes
   Future<void> _searchSuggestions(String q) async {
     try {
       final token = await _token(); if (token == null) return;
@@ -188,19 +208,31 @@ class _TeacherPageState extends State<TeacherPage> {
       );
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final items = (data['items'] as List)
-            .cast<Map>()
-            .map((e) => e.cast<String, dynamic>())
-            .toList();
+        final items = (data['items'] as List).cast<Map>().map((e)=> e.cast<String, dynamic>()).toList();
         setState(() {
-          _suggestions = items.map((e) => {
-            'email': (e['email'] ?? '').toString(),
-            'code' : (e['code']  ?? '').toString(),
-            'name' : (e['name']  ?? '').toString(),
+          _suggestions = items.map((e)=>{
+            'email': (e['email']??'').toString(),
+            'code' : (e['code'] ??'').toString(),
+            'name' : (e['name'] ??'').toString(),
           }).toList();
         });
       }
     } catch (_) {}
+  }
+
+  Future<bool> _confirmDelete(String label) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar asistente'),
+        content: Text('Eliminar a '+label+' de la sesion?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Eliminar')),
+        ],
+      ),
+    );
+    return ok ?? false;
   }
 
   Future<void> _logout() async {
@@ -225,155 +257,168 @@ class _TeacherPageState extends State<TeacherPage> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                SizedBox(
-                  width: 120,
-                  child: TextField(
-                    controller: _durationController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Duración (min)',
-                      isDense: true,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  SizedBox(
+                    width: 120,
+                    child: TextField(
+                      controller: _durationController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Duracion (min)',
+                        isDense: true,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: _startSession,
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Iniciar sesión de clase'),
-                ),
-                const SizedBox(width: 12),
-                if (_sessionId != null)
+                  const SizedBox(width: 12),
                   ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade600),
-                    onPressed: _endSession,
-                    icon: const Icon(Icons.stop),
-                    label: const Text('Finalizar sesión'),
+                    onPressed: _startSession,
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Iniciar sesion de clase'),
                   ),
-                const SizedBox(width: 12),
-                if (_expiresAt != null)
-                  Text('Expira: ${DateTime.fromMillisecondsSinceEpoch((_expiresAt!)*1000)}'),
-              ],
-            ),
-            const SizedBox(height: 16),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              transitionBuilder: (child, anim) => FadeTransition(
-                opacity: anim,
-                child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.98, end: 1).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
-                  child: child,
-                ),
+                  const SizedBox(width: 12),
+                  if (_sessionId != null)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade600),
+                      onPressed: _endSession,
+                      icon: const Icon(Icons.stop),
+                      label: const Text('Finalizar sesion'),
+                    ),
+                  const SizedBox(width: 12),
+                  if (_expiresAt != null)
+                    Text('Expira: ${DateTime.fromMillisecondsSinceEpoch((_expiresAt!)*1000)}'),
+                ],
               ),
-              child: _qrText != null
-                  ? Center(
-                      key: const ValueKey('qr'),
-                      child: Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: QrImageView(
-                            data: _qrText!,
-                            version: QrVersions.auto,
-                            size: 300,
-                            errorCorrectionLevel: QrErrorCorrectLevel.M,
-                            backgroundColor: Colors.white,
+              const SizedBox(height: 16),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                transitionBuilder: (child, anim) => FadeTransition(
+                  opacity: anim,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.98, end: 1).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                    child: child,
+                  ),
+                ),
+                child: _qrText != null
+                    ? Center(
+                        key: const ValueKey('qr'),
+                        child: Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: QrImageView(
+                              data: _qrText!,
+                              version: QrVersions.auto,
+                              size: 300,
+                              errorCorrectionLevel: QrErrorCorrectLevel.M,
+                              backgroundColor: Colors.white,
+                            ),
                           ),
                         ),
-                      ),
-                    )
-                  : const Text('Inicia una sesión para generar el QR.'),
-            ),
-            const SizedBox(height: 16),
-            // Añadir asistente manualmente
-            Row(children: [
-              Expanded(
-                child: TextField(
-                  controller: _addController,
-                  decoration: const InputDecoration(
-                    labelText: 'Añadir por código o correo (solo estudiantes)',
-                    hintText: 'Ej: 470056402 o juan@upc.edu.co',
+                      )
+                    : const Text('Inicia una sesion para generar el QR.'),
+              ),
+              const SizedBox(height: 16),
+              // Añadir asistente manualmente
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: _addController,
+                    decoration: const InputDecoration(
+                      labelText: 'Añadir por codigo o correo (solo estudiantes)',
+                      hintText: 'Ej: 470056402 o juan@upc.edu.co',
+                    ),
+                    onChanged: (v) {
+                      _debounce?.cancel();
+                      final s = v.trim();
+                      if (RegExp(r'^\d').hasMatch(s)) { setState(()=> _suggestions=[]); return; }
+                      _debounce = Timer(const Duration(milliseconds: 350), () { if (s.isNotEmpty) _searchSuggestions(s); });
+                    },
+                    onSubmitted: (_) => _addAttendee(),
                   ),
-                  onChanged: (v) {
-                    _debounce?.cancel();
-                    final s = v.trim();
-                    if (RegExp(r'^\d').hasMatch(s)) { setState(()=> _suggestions=[]); return; }
-                    _debounce = Timer(const Duration(milliseconds: 350), () { if (s.isNotEmpty) _searchSuggestions(s); });
-                  },
-                  onSubmitted: (_) => _addAttendee(),
                 ),
-              ),
-              const SizedBox(width: 8),
-              ElevatedButton.icon(
-                onPressed: _addAttendee,
-                icon: const Icon(Icons.person_add_alt_1),
-                label: const Text('Añadir'),
-              ),
-            ]),
-            if (_suggestions.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  onPressed: _addAttendee,
+                  icon: const Icon(Icons.person_add_alt_1),
+                  label: const Text('Añadir'),
+                ),
+              ]),
+              if (_suggestions.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 180),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    border: Border.all(color: Theme.of(context).dividerColor),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: ListView.separated(
+                    itemCount: _suggestions.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (_, i) {
+                      final s = _suggestions[i];
+                      return ListTile(
+                        leading: const Icon(Icons.person_outline),
+                        title: Text(s['name']!.isNotEmpty ? s['name']! : s['email']!),
+                        subtitle: Text('${s['email']} · ${s['code']}'),
+                        onTap: () {
+                          _addController.text = s['email']!;
+                          setState(()=> _suggestions=[]);
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              const Text('Asistentes:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              Container(
-                constraints: const BoxConstraints(maxHeight: 180),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
-                  border: Border.all(color: Theme.of(context).dividerColor),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: ListView.separated(
-                  itemCount: _suggestions.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (_, i) {
-                    final s = _suggestions[i];
-                    return ListTile(
-                      leading: const Icon(Icons.person_outline),
-                      title: Text(s['name']!.isNotEmpty ? s['name']! : s['email']!),
-                      subtitle: Text('${s['email']} · ${s['code']}'),
-                      onTap: () {
-                        _addController.text = s['email']!;
-                        setState(()=> _suggestions=[]);
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            const Text('Asistentes:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Expanded(
-              child: AnimatedSwitcher(
+              AnimatedSwitcher(
                 duration: const Duration(milliseconds: 250),
                 child: _attendees.isEmpty
-                    ? const Text('Aún no hay asistentes.')
+                    ? const Text('Aun no hay asistentes.')
                     : ListView.separated(
                         key: ValueKey(_attendees.length),
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
                         itemBuilder: (_, i) {
                           final a = _attendees[i];
                           final when = a['at'] is int
                               ? DateTime.fromMillisecondsSinceEpoch((a['at'] as int) * 1000)
                               : null;
+                          final label = (a['name'] ?? a['code'] ?? 'Estudiante').toString();
+                          final code = (a['code'] ?? '').toString();
                           return Dismissible(
-                            key: ValueKey(a['code'] ?? i),
+                            key: ValueKey(code.isNotEmpty ? code : i),
                             direction: DismissDirection.endToStart,
+                            confirmDismiss: (_) async {
+                              final ok = await _confirmDelete(label);
+                              if (ok && code.isNotEmpty) await _removeAttendee(code);
+                              return ok;
+                            },
                             background: Container(
                               color: Colors.red.shade100,
                               alignment: Alignment.centerRight,
                               padding: const EdgeInsets.symmetric(horizontal: 16),
                               child: const Icon(Icons.delete_outline, color: Colors.red),
                             ),
-                            onDismissed: (_) {
-                              final code = (a['code'] ?? '').toString();
-                              if (code.isNotEmpty) _removeAttendee(code);
-                            },
                             child: Card(
                               child: ListTile(
                                 leading: const Icon(Icons.person),
-                                title: Text(a['name'] ?? a['code'] ?? 'Estudiante'),
+                                title: Text(label),
                                 subtitle: Text('${a['email'] ?? ''}${when != null ? ' · ${when.toLocal()}' : ''}'),
+                                trailing: IconButton(
+                                  tooltip: 'Eliminar',
+                                  icon: const Icon(Icons.delete_outline),
+                                  onPressed: () async {
+                                    final ok = await _confirmDelete(label);
+                                    if (ok && code.isNotEmpty) await _removeAttendee(code);
+                                  },
+                                ),
                               ),
                             ),
                           );
@@ -382,8 +427,8 @@ class _TeacherPageState extends State<TeacherPage> {
                         itemCount: _attendees.length,
                       ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
