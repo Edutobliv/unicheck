@@ -1,21 +1,22 @@
-import 'dart:async';
-import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:http/http.dart' as http;
-import 'package:qr_flutter/qr_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:mime/mime.dart' as mime;
-import 'login_page.dart';
-import 'teacher_page.dart';
-import 'student_checkin_scanner.dart';
-import 'porter_page.dart';
-import 'app_theme.dart';
-import 'api_config.dart';
-import 'register_page.dart';
-import 'supabase_config.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import "dart:async";
+import "dart:convert";
+import "package:cached_network_image/cached_network_image.dart";
+import "package:flutter/material.dart";
+import "package:flutter/foundation.dart" show kIsWeb;
+import "package:http/http.dart" as http;
+import "package:qr_flutter/qr_flutter.dart";
+import "package:shared_preferences/shared_preferences.dart";
+import "package:image_picker/image_picker.dart";
+import "package:mime/mime.dart" as mime;
+import "login_page.dart";
+import "teacher_page.dart";
+import "student_checkin_scanner.dart";
+import "porter_page.dart";
+import "app_theme.dart";
+import "api_config.dart";
+import "register_page.dart";
+import "supabase_config.dart";
+import "package:supabase_flutter/supabase_flutter.dart";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -167,10 +168,10 @@ class _CarnetPageState extends State<CarnetPage> {
           await _logout();
           return;
         }
-        _toast("No se pudo generar el QR (${resp.statusCode})");
+        _toast("No se pudo generar el QR (".toString() + resp.statusCode.toString() + ")");
       }
     } catch (e) {
-      _toast("Error de red: $e");
+      _toast("Error de red: " + e.toString());
     }
   }Future<void> _ensurePhotoCacheForCurrentStudent() async {
     try {
@@ -383,10 +384,10 @@ class _CarnetPageState extends State<CarnetPage> {
         _toast("Sesión expirada. Ingresa nuevamente.");
         await _logout();
       } else {
-        _toast('No se pudo subir la foto (${resp.statusCode}).');
+        _toast('No se pudo subir la foto (".toString() + resp.statusCode.toString() + ").');
       }
     } catch (e) {
-      _toast('Error al subir la foto: $e');
+      _toast('Error al subir la foto: ' + e.toString());
     }
   }
 
@@ -646,7 +647,7 @@ class _CarnetPageState extends State<CarnetPage> {
                         ),
                       ),
                       TextSpan(
-                        text: "${_secondsLeft.clamp(0, 999)} s",
+                        text: "$" + "{_secondsLeft.clamp(0, 999)} s",
                         style: const TextStyle(
                           color: Color(0xFFB0191D),
                           fontWeight: FontWeight.w900,
@@ -710,14 +711,19 @@ class _FotoBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Image img;
+    Widget img;
     bool looksLikeUrl(String s) => s.startsWith('http://') || s.startsWith('https://') || s.startsWith('data:image');
     if (photoUrl != null && photoUrl!.isNotEmpty && looksLikeUrl(photoUrl!)) {
       if (photoUrl!.startsWith('data:image')) {
         final b64 = photoUrl!.split(',').last;
         img = Image.memory(base64Decode(b64), fit: BoxFit.cover);
       } else {
-        img = Image.network(photoUrl!, fit: BoxFit.cover);
+        img = CachedNetworkImage(
+          imageUrl: photoUrl!,
+          fit: BoxFit.cover,
+          placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+          errorWidget: (context, url, error) => Image.asset(photoAssetPath, fit: BoxFit.cover),
+        );
       }
     } else {
       img = Image.asset(photoAssetPath, fit: BoxFit.cover);
