@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
@@ -18,7 +18,6 @@ class _LoginPageState extends State<LoginPage> {
   final _passController = TextEditingController();
   bool _loading = false;
   String? _error;
-  // Base URL now resolves per-platform (web/desktop: localhost, Android emulator: 10.0.2.2)
   final String _baseUrl = ApiConfig.baseUrl;
 
   @override
@@ -32,7 +31,6 @@ class _LoginPageState extends State<LoginPage> {
     final token = prefs.getString('token');
     final role = prefs.getString('role');
     if (token != null && role != null) {
-      // En web permitimos acceso solo a profesores
       if (kIsWeb && role != 'teacher') {
         await prefs.remove('token');
         await prefs.remove('role');
@@ -47,19 +45,15 @@ class _LoginPageState extends State<LoginPage> {
       }
       if (!mounted) return;
       String route;
-      if (role == 'teacher') {
-        route = '/teacher';
-      } else if (role == 'porter') route = '/porter';
+      if (role == 'teacher') route = '/teacher';
+      else if (role == 'porter') route = '/porter';
       else route = '/carnet';
       Navigator.of(context).pushReplacementNamed(route);
     }
   }
 
   Future<void> _login() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() { _loading = true; _error = null; });
     try {
       final input = _emailController.text.trim();
       final isEmail = input.contains('@');
@@ -76,30 +70,35 @@ class _LoginPageState extends State<LoginPage> {
 
       final Map<String, String> payload = isEmail
           ? {
-              "email": input,
-              "password": _passController.text,
+              'email': input,
+              'password': _passController.text,
             }
           : {
-              "code": input,
-              "password": _passController.text,
+              'code': input,
+              'password': _passController.text,
             };
 
-      final resp = await http
-          .post(
-        Uri.parse("$_baseUrl/auth/login"),
-        headers: {"Content-Type": "application/json"},
+      final resp = await http.post(
+        Uri.parse('$_baseUrl/auth/login'),
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode(payload),
-      )
-          .timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 5));
+
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final prefs = await SharedPreferences.getInstance();
+        final prevCode = prefs.getString('code');
         await prefs.setString('token', data['token'] as String);
         if (data['refreshToken'] is String) {
           await prefs.setString('refreshToken', data['refreshToken'] as String);
         }
         final user = (data['user'] as Map).cast<String, dynamic>();
         final code = user['code'] as String;
+        if (prevCode != null && prevCode != code) {
+          await prefs.remove('photoData:$prevCode');
+          await prefs.remove('photoUrl:$prevCode');
+          await prefs.remove('photoUrlExp:$prevCode');
+        }
         await prefs.setString('role', user['role'] as String);
         await prefs.setString('code', code);
         await prefs.setString('name', user['name'] as String);
@@ -113,13 +112,12 @@ class _LoginPageState extends State<LoginPage> {
         await prefs.remove('photoUrl');
         await prefs.remove('photoUrlExp');
         if (user['photoUrl'] is String) {
-          await prefs.setString('photoUrl:'+code, user['photoUrl'] as String);
-          // TTL aproximado (login firma por ~300s); si se requiere precisión, se puede exponer desde el backend
+          await prefs.setString('photoUrl:$code', user['photoUrl'] as String);
           final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-          await prefs.setInt('photoUrlExp:'+code, now + 300);
+          await prefs.setInt('photoUrlExp:$code', now + 300);
         } else {
-          await prefs.remove('photoUrl:'+code);
-          await prefs.remove('photoUrlExp:'+code);
+          await prefs.remove('photoUrl:$code');
+          await prefs.remove('photoUrlExp:$code');
         }
         // En web, solo profesores pueden continuar
         final role = user['role'] as String?;
@@ -150,9 +148,9 @@ class _LoginPageState extends State<LoginPage> {
           final body = jsonDecode(resp.body) as Map<String, dynamic>;
           final err = (body['message'] ?? body['error'])?.toString();
           if (err != null && err.isNotEmpty) {
-            msg = err + ' (Origen: backend ' + resp.statusCode.toString() + ')';
+            msg = '$err (Origen: backend ${resp.statusCode})';
           } else {
-            msg = 'Error (Origen: backend ' + resp.statusCode.toString() + ')';
+            msg = 'Error (Origen: backend ${resp.statusCode})';
           }
         } catch (_) {}
         setState(() { _error = msg; });

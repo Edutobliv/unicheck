@@ -43,6 +43,10 @@ export async function ensureSchema() {
     code text primary key,
     email text unique not null,
     name text not null,
+    first_name text,
+    middle_name text,
+    last_name text,
+    second_last_name text,
     role text not null,
     program text,
     expires_at text,
@@ -159,6 +163,10 @@ function mapUserRow(row) {
     code: row.code,
     email: row.email,
     name: row.name,
+    firstName: row.first_name,
+    middleName: row.middle_name,
+    lastName: row.last_name,
+    secondLastName: row.second_last_name,
     role: row.role,
     program: row.program ?? undefined,
     expiresAt: fmtDate(row.expires_on) ?? row.expires_at ?? undefined,
@@ -186,13 +194,14 @@ export async function userExistsByEmailOrCode(email, code) {
   return rows.length > 0;
 }
 
-export async function createUser({ code, email, name, role, program, expiresAt, photoUrl, passwordHash }) {
+export async function createUser({ code, email, name, firstName, middleName, lastName, secondLastName, role, program, expiresAt, photoUrl, passwordHash }) {
+  console.log('Creating user with:', { code, email, name, firstName, middleName, lastName, secondLastName });
   const p = await getPool();
   const { rows } = await p.query(
-    `insert into users (code, email, name, role, program, expires_on, photo_url, password_hash)
-     values ($1,$2,$3,$4,$5, to_date($6,'DD/MM/YYYY'), $7,$8)
+    `insert into users (code, email, name, first_name, middle_name, last_name, second_last_name, role, program, expires_on, photo_url, password_hash)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9, to_date($10,'DD/MM/YYYY'), $11,$12)
      returning *`,
-    [code, email, name, role, program || null, expiresAt || null, photoUrl || null, passwordHash]
+    [code, email, name, firstName || null, middleName || null, lastName || null, secondLastName || null, role, program || null, expiresAt || null, photoUrl || null, passwordHash]
   );
   return mapUserRow(rows[0]);
 }

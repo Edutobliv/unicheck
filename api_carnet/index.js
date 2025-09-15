@@ -296,9 +296,9 @@ app.post('/auth/refresh', async (req, res) => {
 // Registro de nuevos estudiantes
 app.post("/auth/register", async (req, res) => {
   try {
-    let { code, email, name, password, program, expiresAt, role, photo } = req.body || {};
-    if (!code || !email || !name || !password) {
-      return res.status(400).json({ error: "missing_fields", message: "Faltan campos obligatorios" });
+    let { code, email, name, firstName, middleName, lastName, secondLastName, password, program, expiresAt, role, photo } = req.body || {};
+    if (!code || !email || !name.trim() || !password || !firstName || !lastName) {
+      return res.status(400).json({ error: "missing_fields", message: "Faltan campos obligatorios (nombre, apellido)" });
     }
     const exists = await userExistsByEmailOrCode(email, code);
     if (exists) {
@@ -328,6 +328,10 @@ app.post("/auth/register", async (req, res) => {
       code,
       email,
       name,
+      firstName,
+      middleName,
+      lastName,
+      secondLastName,
       role: role || "student",
       program,
       expiresAt,

@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 
 import 'api_config.dart';
 import 'app_theme.dart';
+import 'verify_email_helper.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -32,8 +33,8 @@ class _RegisterPageState extends State<RegisterPage> {
     'Ingenieria Civil',
     'Ingenieria Financiera',
     'Administración Ambiental',
-    'Administracion Logistica',
-    'Administracion Turistica y Hotelera',
+    'Administración Logística',
+    'Administración Turística y Hotelera',
     'Contaduria Publica',
   ];
   String? _selectedProgram;
@@ -203,16 +204,12 @@ class _RegisterPageState extends State<RegisterPage> {
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
-    // Construir nombre completo para el backend (API espera un solo campo "name")
-    String fullName() {
-      final parts = <String>[
-        _firstNameController.text.trim(),
-        _middleNameController.text.trim(),
-        _lastNameController.text.trim(),
-        _secondLastNameController.text.trim(),
-      ].where((s) => s.isNotEmpty).toList();
-      return parts.join(' ');
-    }
+    
+    final firstName = _firstNameController.text.trim();
+    final middleName = _middleNameController.text.trim();
+    final lastName = _lastNameController.text.trim();
+    final secondLastName = _secondLastNameController.text.trim();
+    final fullName = [firstName, middleName, lastName, secondLastName].where((s) => s.isNotEmpty).join(' ');
 
     http
         .post(
@@ -221,7 +218,11 @@ class _RegisterPageState extends State<RegisterPage> {
       body: jsonEncode({
         'code': _codeController.text.trim(),
         'email': _emailController.text.trim(),
-        'name': fullName(),
+        'name': fullName,
+        'firstName': firstName,
+        'middleName': middleName,
+        'lastName': lastName,
+        'secondLastName': secondLastName,
         'password': _passwordController.text,
         'program': _selectedProgram,
         'expiresAt': expiry,
@@ -392,7 +393,18 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: _submit,
+                onPressed: () async {
+                  final form = _formKey.currentState;
+                  if (form != null && !form.validate()) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Corrige los errores antes de continuar.')),
+                    );
+                    return;
+                  }
+                  final ok = await verifyEmailWithOtp(context, _emailController.text.trim());
+                  if (!ok) return;
+                  _submit();
+                },
                 child: const Text('Registrar'),
               ),
             ],

@@ -40,6 +40,7 @@ dependencies:
   mobile_scanner: ^3.5.5
   image_picker: ^1.0.7
   mime: ^1.0.4
+  supabase_flutter: ^2.5.6
 
 dev_dependencies:
   flutter_test:

@@ -72,15 +72,15 @@ class _CarnetPageState extends State<CarnetPage> {
   final ImagePicker _picker = ImagePicker();
   String? _photoEnsuredForCode; // evita solicitar la foto muchas veces por sesiÃ³n
 
-  // Colores / estilos
+  // Colores / estálos
   static const Color rojoMarca = Color(0xFFB0191D);
   static const Color grisTexto = Color(0xFF424242);
 
-  // tamaÃ±os (ajustados para parecerse a la maqueta)
+  // tamaños (ajustados para parecerse a la maqueta)
   static const double kPaddingTarjeta = 16;
-  static const double kFotoW = 150;
-  static const double kFotoH = 175;
-  static const double kQrSize = 190; // QR mÃ¡s grande
+  static const double kFotoW = 150; // â†‘
+  static const double kFotoH = 175; // â†‘
+  static const double kQrSize = 190; // â†‘ QR mÃ¡s grande
 
   @override
   void initState() {
@@ -109,7 +109,7 @@ class _CarnetPageState extends State<CarnetPage> {
     } catch (_) {}
   }
 
-    Future<void> _fetchQr() async {
+  Future<void> _fetchQr() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
@@ -132,18 +132,19 @@ class _CarnetPageState extends State<CarnetPage> {
           _student = (data["student"] as Map?)?.cast<String, dynamic>();
           _ephemeralCode = data["ephemeralCode"] as String?;
         });
-        // Completa valores faltantes desde cachÃ© (por ejemplo, nombre)
+        // Completa valores faltantes del estudiante desde caché (por ejemplo, nombre)
         try {
           if (_student != null) {
             final cachedName = prefs.getString('name');
             final currentName = _student!['name']?.toString().trim() ?? '';
-            if (cachedName != null && currentName.isEmpty) {
+            if (cachédName != null && currentName.isEmpty) {
               (_student!)['name'] = cachedName;
             }
           }
         } catch (_) {}
+        // Asegurar caché© de foto una sola vez por sesiÃ³n/usuario
         await _ensurePhotoCacheForCurrentStudent();
-        // Guardado/cachÃ© de foto firmada si viene en la respuesta
+        // Guardar foto firmada y expiraciÃ³n si viene en la respuestá
         final stu = _student;
         if (stu != null) {
           final signed = stu['photoUrl'] as String?;
@@ -154,7 +155,8 @@ class _CarnetPageState extends State<CarnetPage> {
             final expAt = now + expIn;
             await prefs.setString('photoUrl:'+code, signed);
             await prefs.setInt('photoUrlExp:'+code, expAt);
-          } else {
+          if (await _tryRefreshToken()) { await _fetchQr(); return; }
+          _toast("Sesión expirada. Por favor ingresa nuevamente.");
             await _maybeRefreshSignedPhoto(prefs);
           }
         }
@@ -163,8 +165,8 @@ class _CarnetPageState extends State<CarnetPage> {
       } else {
         if (resp.statusCode == 401) {
           if (await _tryRefreshToken()) { await _fetchQr(); return; }
-          _toast('SesiÃ³n expirada. Por favor ingresa nuevamente.');
-          await _logout();
+          if (await _tryRefreshToken()) { await _fetchQr(); return; }
+          _toast("Sesión expirada. Por favor ingresa nuevamente.");
           return;
         }
         _toast("No se pudo generar el QR (${resp.statusCode})");
@@ -172,7 +174,9 @@ class _CarnetPageState extends State<CarnetPage> {
     } catch (e) {
       _toast("Error de red: $e");
     }
-  }Future<void> _ensurePhotoCacheForCurrentStudent() async {
+  }
+
+  Future<void> _ensurePhotoCacheForCurrentStudent() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final stu = _student;
@@ -256,11 +260,13 @@ class _CarnetPageState extends State<CarnetPage> {
       final token = prefs.getString('token');
       if (token == null) return;
       final code = prefs.getString('code');
-      // Si ya tenemos data URL o ya lo intentamos para este code, salir
+      // Si ya tenemos data URL o ya lo intentamos para está code, salir
       if (code != null) {
-        final cachedData = prefs.getString('photoData:'+code);
-        if (cachedData != null && cachedData.isNotEmpty) {
-          setState(() { (_student ??= <String,dynamic>{})['photoUrl'] = cachedData; });
+      // Si ya tenemos data URL o ya lo intentamos para este code, salir
+      final cachedData = prefs.getString('photoData:'+code);
+      if (cachedData != null && cachedData.isNotEmpty) {
+          setState(() { (_student ??= <String,dynamic>{})['photoUrl'] = cachédData; });
+        setState(() { (_student ??= <String,dynamic>{})['photoUrl'] = cachedData; });
         }
         if (_photoEnsuredForCode == code) return;
       }
@@ -272,7 +278,7 @@ class _CarnetPageState extends State<CarnetPage> {
         final m = jsonDecode(resp.body) as Map<String, dynamic>;
         final signed = m['photoUrl'] as String?;
         if (signed != null && signed.isNotEmpty && code != null) {
-          await _cachePhotoFromSignedUrlOnce(signed, prefs, code);
+          await _cachéPhotoFromSignedUrlOnce(signed, prefs, code);
         }
       }
     } catch (_) {}
@@ -312,7 +318,7 @@ class _CarnetPageState extends State<CarnetPage> {
       final source = await showModalBottomSheet<ImageSource>(
         context: context,
         builder: (_) => SafeArea(
-          child: Column(
+                title: const Text("Elegir de galería"),
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
@@ -322,7 +328,7 @@ class _CarnetPageState extends State<CarnetPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.photo_library),
-                title: const Text("Elegir de galeria"),
+                title: const Text("Elegir de galería"),
                 onTap: () => Navigator.of(context).pop(ImageSource.gallery),
               ),
             ],
@@ -356,7 +362,7 @@ class _CarnetPageState extends State<CarnetPage> {
       final token = prefs.getString('token');
       final code = prefs.getString('code');
       if (token == null || code == null) {
-        _toast("SesiÃ³n no vÃ¡lida. Ingresa nuevamente.");
+        _toast("Sesión no válida. Ingresa nuevamente.");
         await _logout();
         return;
       }
@@ -372,7 +378,7 @@ class _CarnetPageState extends State<CarnetPage> {
       ).timeout(const Duration(seconds: 15));
 
       if (resp.statusCode == 200) {
-        // cachea inmediatamente la imagen que el usuario subiÃ³
+        // cachéa inmediatamente la imagen que el usuario subiÃ³
         await prefs.setString('photoData:'+code, dataUrl);
         await prefs.remove('photoUrl:'+code);
         await prefs.remove('photoUrlExp:'+code);
@@ -380,7 +386,7 @@ class _CarnetPageState extends State<CarnetPage> {
         setState(() { (_student ??= <String, dynamic>{})['photoUrl'] = dataUrl; });
         _toast('Foto actualizada.');
       } else if (resp.statusCode == 401) {
-        _toast("SesiÃ³n expirada. Ingresa nuevamente.");
+        _toast("Sesión expirada. Ingresa nuevamente.");
         await _logout();
       } else {
         _toast('No se pudo subir la foto (${resp.statusCode}).');
@@ -443,7 +449,7 @@ class _CarnetPageState extends State<CarnetPage> {
         body: const Center(
           child: Padding(
             padding: EdgeInsets.all(16),
-            child: Text("El carnet digital estÃ¡ disponible solo en la app mÃ³vil.\nPor favor ingresa desde tu celular vinculado."),
+            child: Text("El carnet digital está disponible solo en la app móvil.\\nPor favor ingresa desde tu celular vinculado."),
           ),
         ),
       );
@@ -507,6 +513,7 @@ class _CarnetPageState extends State<CarnetPage> {
                           ),
                         ),
                       ),
+                                Text("Código: " + _ephemeralCode!, style: const TextStyle(fontSize: 12)), 
                       Expanded(
                         child: Align(
                           alignment: Alignment.topCenter,
@@ -516,7 +523,7 @@ class _CarnetPageState extends State<CarnetPage> {
                               _QrGrande(qrUrl: _qrUrl, size: kQrSize),
                               if (_ephemeralCode != null) ...[
                                 const SizedBox(height: 8),
-                                Text("CÃ³digo: " + _ephemeralCode!, style: const TextStyle(fontSize: 12)),
+                                Text("Código: " + _ephemeralCode!, style: const TextStyle(fontSize: 12)), 
                               ],
                             ],
                           ),
@@ -528,19 +535,17 @@ class _CarnetPageState extends State<CarnetPage> {
 
                   // NOMBRE
                   const _Label("NOMBRE"),
-                  Builder(builder: (context) {
-                    final name = s?['name']?.toString() ?? '';
-                    return Text(
-                      (name.isNotEmpty ? name : "Error\nComunicate con soporte")
-                          .toUpperCase(),
-                      style: const TextStyle(
-                        color: grisTexto,
-                        fontSize: 18,
-                        height: 1.15,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    );
-                  }),
+                  Text(
+                    (s?["name"] ?? "MIGUEL ANGEL\nGONZALEZ POSADA")
+                        .toString()
+                        .toUpperCase(),
+                    style: const TextStyle(
+                      color: grisTexto,
+                      fontSize: 18,
+                      height: 1.15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                   const SizedBox(height: 10),
 
                   // CÃ“DIGO / VENCE
@@ -592,8 +597,8 @@ class _CarnetPageState extends State<CarnetPage> {
                   ),
                   const SizedBox(height: 12),
 
+                  // BANDA ROJA estudiante
                   // BANDA ROJA ESTUDIANTE
-                  Container(
                     padding: const EdgeInsets.symmetric(
                       vertical: 10,
                       horizontal: 14,
@@ -604,8 +609,8 @@ class _CarnetPageState extends State<CarnetPage> {
                     ),
                     child: const Center(
                       child: Text(
+                        "estudiante",
                         "ESTUDIANTE",
-                        style: TextStyle(
                           color: Colors.white,
                           letterSpacing: 1.1,
                           fontWeight: FontWeight.w900,
@@ -619,6 +624,7 @@ class _CarnetPageState extends State<CarnetPage> {
             ),
 
             const SizedBox(height: 14),
+                        text: "CÓDIGO QR\\n",
             // Leyenda de expiraciÃ³n (fuera de la tarjeta)
             Column(
               children: [
@@ -628,7 +634,7 @@ class _CarnetPageState extends State<CarnetPage> {
                     style: const TextStyle(fontFamily: 'Roboto'),
                     children: [
                       const TextSpan(
-                        text: "CÃ“DIGO QR\n",
+                        text: "CÓDIGO QR\n",
                         style: TextStyle(
                           color: Color(0xFFB0191D),
                           fontSize: 14,
@@ -649,6 +655,7 @@ class _CarnetPageState extends State<CarnetPage> {
                         text: "${_secondsLeft.clamp(0, 999)} s",
                         style: const TextStyle(
                           color: Color(0xFFB0191D),
+                  "Se renueva automáticamente",
                           fontWeight: FontWeight.w900,
                           letterSpacing: 0.6,
                         ),
@@ -779,3 +786,10 @@ class _QrGrande extends StatelessWidget {
     );
   }
 }
+
+
+
+
+
+
+
