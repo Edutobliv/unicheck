@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -23,6 +23,7 @@ class _PorterPageState extends State<PorterPage> {
   _result; // { valid: bool, student: {...}, reason: string }
   String? _porterName;
   bool _scanning = true;
+  bool _verifying = false;
   Timer? _expTimer;
   int? _expEpoch; // epoch seconds del token escaneado
   int _secondsLeft = 0;
@@ -56,9 +57,9 @@ class _PorterPageState extends State<PorterPage> {
     if (code == null) return;
     setState(() {
       _locked = true;
-      _scanning = false; // oculta la cámara para evitar dobles capturas
+      _scanning = false; // oculta la cÃ¡mara para evitar dobles capturas
     });
-    final token = _extractToken(code);
+    final token = _extractToken(code.trim());
     _setupCountdownFromToken(token);
     await _verifyToken(token);
   }
@@ -68,7 +69,7 @@ class _PorterPageState extends State<PorterPage> {
     try {
       if (raw.startsWith('http://') || raw.startsWith('https://')) {
         final uri = Uri.parse(raw);
-        final t = uri.queryParameters['t'];
+        final t = uri.queryParameters['t'] ?? uri.queryParameters['token'];
         if (t != null && t.isNotEmpty) return t;
       }
     } catch (_) {}
@@ -125,6 +126,7 @@ class _PorterPageState extends State<PorterPage> {
 
   Future<void> _verifyToken(String token) async {
     try {
+      setState(() { _verifying = true; });
       final prefs = await SharedPreferences.getInstance();
       final auth = prefs.getString('token');
       final resp = await http.post(
@@ -134,7 +136,7 @@ class _PorterPageState extends State<PorterPage> {
           if (auth != null) 'Authorization': 'Bearer $auth',
         },
         body: jsonEncode({'token': token}),
-      );
+      ).timeout(const Duration(seconds: 10));
       if (!mounted) return;
       Map<String, dynamic> body;
       try {
@@ -147,8 +149,9 @@ class _PorterPageState extends State<PorterPage> {
           _result = {'valid': true, 'student': body['student']};
         });
       } else {
+        final reason = (body['reason'] ?? 'invalid').toString();
         setState(() {
-          _result = {'valid': false, 'reason': body['reason'] ?? 'invalid'};
+          _result = {'valid': false, 'reason': reason};
         });
       }
     } catch (e) {
@@ -156,6 +159,8 @@ class _PorterPageState extends State<PorterPage> {
       setState(() {
         _result = {'valid': false, 'reason': 'network_error'};
       });
+    } finally {
+      if (mounted) setState(() { _verifying = false; });
     }
   }
 
@@ -171,7 +176,7 @@ class _PorterPageState extends State<PorterPage> {
 
   @override
   Widget build(BuildContext context) {
-    // En web, mostrar mensaje y no intentar usar cámara
+    // En web, mostrar mensaje y no intentar usar cÃ¡mara
     if (kIsWeb) {
       return Scaffold(
         appBar: AppBar(
@@ -181,7 +186,7 @@ class _PorterPageState extends State<PorterPage> {
         body: const Center(
           child: Padding(
             padding: EdgeInsets.all(16),
-            child: Text('El panel de portería no está disponible en la web.\nPor favor usa el celular vinculado a tu cuenta.'),
+            child: Text('El panel de porterÃ­a no estÃ¡ disponible en la web.\nPor favor usa el celular vinculado a tu cuenta.'),
           ),
         ),
       );
@@ -202,7 +207,7 @@ class _PorterPageState extends State<PorterPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Usuario: ${_porterName ?? ''} • Rol: Portero',
+              'Usuario: ${_porterName ?? ''} â€¢ Rol: Portero',
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
@@ -238,7 +243,7 @@ class _PorterPageState extends State<PorterPage> {
                 ),
               const SizedBox(height: 12),
               ElevatedButton.icon(
-                onPressed: _reset,
+                onPressed: _verifying ? null : _reset,
                 icon: const Icon(Icons.qr_code_scanner),
                 label: const Text('Escanear otro'),
               ),
@@ -257,10 +262,24 @@ class _PorterPageState extends State<PorterPage> {
                       )
                     : Container(
                         color: Colors.black12,
-                        child: const Center(child: Text('Cámara pausada')),
+                        child: const Center(child: Text('CÃ¡mara pausada')),
                       ),
               ),
             ),
+            if (_verifying) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: const [
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 8),
+                  Text('Verificando...')
+                ],
+              )
+            ],
           ],
         ),
       ),
@@ -277,10 +296,13 @@ class _ResultCard extends StatelessWidget {
     final ok = result['valid'] == true;
     final student = (result['student'] as Map?)?.cast<String, dynamic>();
     final color = ok ? Colors.green.shade600 : Colors.red.shade700;
-    final title = ok ? 'Válido' : 'No válido';
-    final subtitle = ok
-        ? '${student?['name'] ?? ''} • ${student?['email'] ?? ''}\nCódigo: ${student?['code'] ?? ''}'
-        : 'Motivo: ${result['reason'] ?? 'desconocido'}';
+    final title = ok ? 'VÃ¡lido' : 'No vÃ¡lido';
+    String subtitle;
+    if (ok) {
+      subtitle = (student?['name'] ?? '').toString() + ' - ' + (student?['email'] ?? '').toString() + '\nCodigo: ' + (student?['code'] ?? '').toString();
+    } else {
+      subtitle = 'Motivo: ' + _reasonLabel((result['reason'] ?? 'invalid').toString());
+    }
 
     return Container(
       width: double.infinity,
@@ -314,6 +336,23 @@ class _ResultCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+String _reasonLabel(String code) {
+  switch (code) {
+    case 'expired_or_unknown':
+      return 'QR expirado o desconocido';
+    case 'replayed':
+      return 'QR ya utilizado (repetido)';
+    case 'missing_token':
+    case 'invalid_token':
+    case 'missing_jti':
+      return 'QR invÃ¡lido';
+    case 'network_error':
+      return 'Error de red';
+    default:
+      return code;
   }
 }
 
@@ -351,3 +390,4 @@ class _ExpiryIndicator extends StatelessWidget {
     );
   }
 }
+

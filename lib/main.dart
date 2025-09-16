@@ -1,5 +1,6 @@
 import "dart:async";
 import "dart:convert";
+import "dart:typed_data";
 import "package:cached_network_image/cached_network_image.dart";
 import "package:flutter/material.dart";
 import "package:flutter/foundation.dart" show kIsWeb;
@@ -528,7 +529,7 @@ class _CarnetPageState extends State<CarnetPage> {
                   const SizedBox(height: 14),
 
                   // NOMBRE
-                  const _Label("NOMBRE"),
+                  const _Label(" NOMBRE"),
                   Builder(builder: (context) {
                     final name = s?['name']?.toString() ?? '';
                     return Text(
@@ -647,7 +648,7 @@ class _CarnetPageState extends State<CarnetPage> {
                         ),
                       ),
                       TextSpan(
-                        text: "$" + "{_secondsLeft.clamp(0, 999)} s",
+                        text: "${_secondsLeft.clamp(0, 999)} s",
                         style: const TextStyle(
                           color: Color(0xFFB0191D),
                           fontWeight: FontWeight.w900,
@@ -696,7 +697,7 @@ class _Label extends StatelessWidget {
   }
 }
 
-class _FotoBox extends StatelessWidget {
+class _FotoBox extends StatefulWidget {
   final String? photoUrl; // si en el futuro viene del backend
   final String photoAssetPath; // fallback local
   final double width;
@@ -710,28 +711,64 @@ class _FotoBox extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    Widget img;
-    bool looksLikeUrl(String s) => s.startsWith('http://') || s.startsWith('https://') || s.startsWith('data:image');
-    if (photoUrl != null && photoUrl!.isNotEmpty && looksLikeUrl(photoUrl!)) {
-      if (photoUrl!.startsWith('data:image')) {
-        final b64 = photoUrl!.split(',').last;
-        img = Image.memory(base64Decode(b64), fit: BoxFit.cover);
-      } else {
-        img = CachedNetworkImage(
-          imageUrl: photoUrl!,
-          fit: BoxFit.cover,
-          placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
-          errorWidget: (context, url, error) => Image.asset(photoAssetPath, fit: BoxFit.cover),
-        );
-      }
-    } else {
-      img = Image.asset(photoAssetPath, fit: BoxFit.cover);
+  State<_FotoBox> createState() => _FotoBoxState();
+}
+
+class _FotoBoxState extends State<_FotoBox> {
+  ImageProvider? _provider;
+  Uint8List? _bytes;
+
+  @override
+  void initState() {
+    super.initState();
+    _computeProvider();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FotoBox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.photoUrl != widget.photoUrl ||
+        oldWidget.photoAssetPath != widget.photoAssetPath) {
+      _computeProvider();
     }
+  }
+
+  void _computeProvider() {
+    final url = widget.photoUrl;
+    try {
+      if (url != null && url.isNotEmpty) {
+        if (url.startsWith('data:image')) {
+          final b64 = url.split(',').last;
+          _bytes = base64Decode(b64);
+          _provider = MemoryImage(_bytes!);
+        } else if (url.startsWith('http://') || url.startsWith('https://')) {
+          // Usa el provider directamente para evitar placeholders/fades en cada rebuild
+          _provider = CachedNetworkImageProvider(url);
+        } else {
+          _provider = AssetImage(widget.photoAssetPath);
+        }
+      } else {
+        _provider = AssetImage(widget.photoAssetPath);
+      }
+    } catch (_) {
+      _provider = AssetImage(widget.photoAssetPath);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final img = _provider != null
+        ? Image(
+            image: _provider!,
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.high,
+            gaplessPlayback: true,
+          )
+        : Image.asset(widget.photoAssetPath, fit: BoxFit.cover);
 
     return Container(
-      width: width,
-      height: height,
+      width: widget.width,
+      height: widget.height,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),

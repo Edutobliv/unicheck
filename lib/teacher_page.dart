@@ -38,6 +38,16 @@ class _TeacherPageState extends State<TeacherPage> {
     super.dispose();
   }
 
+  String _two(int v) => v.toString().padLeft(2, '0');
+  String _expiryLabel() {
+    final e = _expiresAt;
+    if (e == null) return '';
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    if (e <= now) return 'Expirada';
+    final dt = DateTime.fromMillisecondsSinceEpoch(e * 1000).toLocal();
+    return 'Expira: ${_two(dt.hour)}:${_two(dt.minute)}';
+  }
+
   Future<String?> _token() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('token');
@@ -247,6 +257,9 @@ class _TeacherPageState extends State<TeacherPage> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    // Ajusta el tamaño del QR para pantallas estrechas evitando overflow horizontal
+    final double qrSize = (screenWidth - 16 * 2 - 24 * 2).clamp(180.0, 300.0);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Panel del Profesor'),
@@ -261,7 +274,11 @@ class _TeacherPageState extends State<TeacherPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+              // Usar Wrap en lugar de Row para que los botones salten de línea en pantallas estrechas
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   SizedBox(
                     width: 120,
@@ -274,13 +291,11 @@ class _TeacherPageState extends State<TeacherPage> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
                   ElevatedButton.icon(
                     onPressed: _startSession,
                     icon: const Icon(Icons.play_arrow),
                     label: const Text('Iniciar sesion de clase'),
                   ),
-                  const SizedBox(width: 12),
                   if (_sessionId != null)
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade600),
@@ -288,9 +303,8 @@ class _TeacherPageState extends State<TeacherPage> {
                       icon: const Icon(Icons.stop),
                       label: const Text('Finalizar sesion'),
                     ),
-                  const SizedBox(width: 12),
                   if (_expiresAt != null)
-                    Text('Expira: ${DateTime.fromMillisecondsSinceEpoch((_expiresAt!)*1000)}'),
+                    Text(_expiryLabel(), softWrap: false, overflow: TextOverflow.fade),
                 ],
               ),
               const SizedBox(height: 16),
@@ -312,7 +326,7 @@ class _TeacherPageState extends State<TeacherPage> {
                             child: QrImageView(
                               data: _qrText!,
                               version: QrVersions.auto,
-                              size: 300,
+                              size: qrSize,
                               errorCorrectionLevel: QrErrorCorrectLevel.M,
                               backgroundColor: Colors.white,
                             ),
