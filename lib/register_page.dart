@@ -27,14 +27,14 @@ class _RegisterPageState extends State<RegisterPage> {
   final _codeController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  // Programa académico (selección controlada)
+  // Programa academico (selección controlada)
   static const List<String> _programOptions = <String>[
     'Ingenieria de Sistemas',
     'Ingenieria Civil',
     'Ingenieria Financiera',
     'Administración Ambiental',
     'Administración Logística',
-    'Administración Turística y Hotelera',
+    'Administración Turí­stica y Hotelera',
     'Contaduria Publica',
   ];
   String? _selectedProgram;
@@ -79,7 +79,11 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   static const int _maxUploadBytes = 10 * 1024 * 1024; // 10 MB
-  static const Set<String> _allowedMimes = {'image/jpeg', 'image/png', 'image/webp'};
+  static const Set<String> _allowedMimes = {
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+  };
 
   Future<void> _selectPhotoSource() async {
     final source = await showModalBottomSheet<ImageSource>(
@@ -95,7 +99,7 @@ class _RegisterPageState extends State<RegisterPage> {
             ),
             ListTile(
               leading: const Icon(Icons.photo_library),
-              title: const Text('Elegir de galería'),
+              title: const Text('Elegir de galerí­a'),
               onTap: () => Navigator.of(context).pop(ImageSource.gallery),
             ),
           ],
@@ -117,15 +121,23 @@ class _RegisterPageState extends State<RegisterPage> {
     final bytes = await file.readAsBytes();
     if (bytes.length > _maxUploadBytes) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('La imagen supera 10MB. Elige otra o reduce su tamaño.')),
+        const SnackBar(
+          content: Text(
+            'La imagen supera 10MB. Elige otra o reduce su tamaño.',
+          ),
+        ),
       );
       return;
     }
     final header = bytes.length >= 12 ? bytes.sublist(0, 12) : bytes;
-    final detected = mime.lookupMimeType(file.path, headerBytes: header) ?? 'application/octet-stream';
+    final detected =
+        mime.lookupMimeType(file.path, headerBytes: header) ??
+        'application/octet-stream';
     if (!_allowedMimes.contains(detected)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Formato no permitido. Usa JPG, PNG o WebP.')),
+        const SnackBar(
+          content: Text('Formato no permitido. Usa JPG, PNG o WebP.'),
+        ),
       );
       return;
     }
@@ -163,7 +175,8 @@ class _RegisterPageState extends State<RegisterPage> {
   String? _validateCode(String? value) {
     final v = (value ?? '').trim();
     if (v.isEmpty) return 'El código es obligatorio';
-    if (!RegExp(r'^\d{4,}$').hasMatch(v)) return 'El código debe ser numérico (mín. 4 dígitos)';
+    if (!RegExp(r'^\d{4,}$').hasMatch(v))
+      return 'El código debe ser numerico (mí­n. 4 dí­gitos)';
     return null;
   }
 
@@ -192,7 +205,11 @@ class _RegisterPageState extends State<RegisterPage> {
     final form = _formKey.currentState;
     if (form != null && !form.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Corrige los errores antes de continuar. Origen: validación local.')),
+        const SnackBar(
+          content: Text(
+            'Corrige los errores antes de continuar. Origen: validación local.',
+          ),
+        ),
       );
       return;
     }
@@ -204,85 +221,105 @@ class _RegisterPageState extends State<RegisterPage> {
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
-    
+
     final firstName = _firstNameController.text.trim();
     final middleName = _middleNameController.text.trim();
     final lastName = _lastNameController.text.trim();
     final secondLastName = _secondLastNameController.text.trim();
-    final fullName = [firstName, middleName, lastName, secondLastName].where((s) => s.isNotEmpty).join(' ');
+    final fullName = [
+      firstName,
+      middleName,
+      lastName,
+      secondLastName,
+    ].where((s) => s.isNotEmpty).join(' ');
 
     http
         .post(
-      Uri.parse('${ApiConfig.baseUrl}/auth/register'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'code': _codeController.text.trim(),
-        'email': _emailController.text.trim(),
-        'name': fullName,
-        'firstName': firstName,
-        'middleName': middleName,
-        'lastName': lastName,
-        'secondLastName': secondLastName,
-        'password': _passwordController.text,
-        'program': _selectedProgram,
-        'expiresAt': expiry,
-        'role': 'student',
-        'photo': _photoBytes != null && _photoMime != null
-            ? 'data:${_photoMime!};base64,' + base64Encode(_photoBytes!)
-            : null,
-      }),
-    )
+          Uri.parse('${ApiConfig.baseUrl}/auth/register'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'code': _codeController.text.trim(),
+            'email': _emailController.text.trim(),
+            'name': fullName,
+            'firstName': firstName,
+            'middleName': middleName,
+            'lastName': lastName,
+            'secondLastName': secondLastName,
+            'password': _passwordController.text,
+            'program': _selectedProgram,
+            'expiresAt': expiry,
+            'role': 'student',
+            'photo': _photoBytes != null && _photoMime != null
+                ? 'data:${_photoMime!};base64,' + base64Encode(_photoBytes!)
+                : null,
+          }),
+        )
         .then((resp) {
-      Navigator.of(context).pop();
-      if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body) as Map<String, dynamic>;
-        final user = (data['user'] as Map?)?.cast<String, dynamic>();
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: const Text('Registro exitoso'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_photoBytes != null)
-                  Image.memory(_photoBytes!, width: 120, height: 120, fit: BoxFit.cover),
-                if (user != null) ...[
-                  const SizedBox(height: 8),
-                  Text(user['name'] ?? ''),
-                ],
-                const SizedBox(height: 12),
-                Text('Código efímero: ${data['ephemeralCode']}'),
-              ],
-            ),
-          ),
-        );
-        Future.delayed(const Duration(seconds: 2), () {
-          Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-        });
-      } else {
-        String msg = 'Error al registrar';
-        try {
-          final body = jsonDecode(resp.body) as Map<String, dynamic>;
-          final err = (body['message'] ?? body['error'])?.toString();
-          if (err != null && err.isNotEmpty) {
-            msg = '$err (Origen: backend ${resp.statusCode})';
+          Navigator.of(context).pop();
+          if (resp.statusCode == 200) {
+            final data = jsonDecode(resp.body) as Map<String, dynamic>;
+            final user = (data['user'] as Map?)?.cast<String, dynamic>();
+            showDialog(
+              context: context,
+              builder: (_) => AlertDialog(
+                title: const Text('Registro exitoso'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_photoBytes != null)
+                      Image.memory(
+                        _photoBytes!,
+                        width: 120,
+                        height: 120,
+                        fit: BoxFit.cover,
+                      ),
+                    if (user != null) ...[
+                      const SizedBox(height: 8),
+                      Text(user['name'] ?? ''),
+                    ],
+                    const SizedBox(height: 12),
+                    Text('Código efí­mero: ${data['ephemeralCode']}'),
+                  ],
+                ),
+              ),
+            );
+            Future.delayed(const Duration(seconds: 2), () {
+              Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil('/login', (route) => false);
+            });
           } else {
-            msg = 'Error (Origen: backend ${resp.statusCode})';
+            String msg = 'Error al registrar';
+            try {
+              final body = jsonDecode(resp.body) as Map<String, dynamic>;
+              final err = (body['message'] ?? body['error'])?.toString();
+              if (err != null && err.isNotEmpty) {
+                msg = '$err (Origen: backend ${resp.statusCode})';
+              } else {
+                msg = 'Error (Origen: backend ${resp.statusCode})';
+              }
+            } catch (_) {}
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(msg)));
           }
-        } catch (_) {}
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-      }
-    }).catchError((e) {
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error de red (Origen: red): ${e.toString()}')));
-    });
+        })
+        .catchError((e) {
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error de red (Origen: red): ${e.toString()}'),
+            ),
+          );
+        });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Registro'), actions: const [ThemeToggleButton()]),
+      appBar: AppBar(
+        title: const Text('Registro'),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -292,7 +329,9 @@ class _RegisterPageState extends State<RegisterPage> {
             children: [
               TextFormField(
                 controller: _codeController,
-                decoration: const InputDecoration(labelText: 'Código (solo números)'),
+                decoration: const InputDecoration(
+                  labelText: 'Código (solo números)',
+                ),
                 keyboardType: TextInputType.number,
                 validator: _validateCode,
               ),
@@ -305,7 +344,9 @@ class _RegisterPageState extends State<RegisterPage> {
               const SizedBox(height: 15),
               TextFormField(
                 controller: _middleNameController,
-                decoration: const InputDecoration(labelText: 'Segundo nombre (opcional)'),
+                decoration: const InputDecoration(
+                  labelText: 'Segundo nombre (opcional)',
+                ),
               ),
               const SizedBox(height: 15),
               TextFormField(
@@ -316,7 +357,9 @@ class _RegisterPageState extends State<RegisterPage> {
               const SizedBox(height: 15),
               TextFormField(
                 controller: _secondLastNameController,
-                decoration: const InputDecoration(labelText: 'Segundo apellido (opcional)'),
+                decoration: const InputDecoration(
+                  labelText: 'Segundo apellido (opcional)',
+                ),
               ),
               const SizedBox(height: 15),
               TextFormField(
@@ -324,7 +367,8 @@ class _RegisterPageState extends State<RegisterPage> {
                 keyboardType: TextInputType.emailAddress,
                 decoration: const InputDecoration(
                   labelText: 'Correo',
-                  helperText: 'Usa tu correo institucional (.edu, .edu.xx, .ac.xx)',
+                  helperText:
+                      'Usa tu correo institucional (.edu, .edu.xx, .ac.xx)',
                 ),
                 validator: _validateEducationalEmail,
               ),
@@ -340,10 +384,13 @@ class _RegisterPageState extends State<RegisterPage> {
                 value: _selectedProgram,
                 decoration: const InputDecoration(labelText: 'Programa'),
                 items: _programOptions
-                    .map((p) => DropdownMenuItem<String>(value: p, child: Text(p)))
+                    .map(
+                      (p) => DropdownMenuItem<String>(value: p, child: Text(p)),
+                    )
                     .toList(),
                 onChanged: (v) => setState(() => _selectedProgram = v),
-                validator: (v) => (_selectedProgram == null || _selectedProgram!.isEmpty)
+                validator: (v) =>
+                    (_selectedProgram == null || _selectedProgram!.isEmpty)
                     ? 'Selecciona un programa'
                     : null,
               ),
@@ -361,34 +408,85 @@ class _RegisterPageState extends State<RegisterPage> {
                     controller: _expiryController,
                     decoration: const InputDecoration(
                       labelText: 'Fecha de vencimiento (opcional)',
-                      hintText: 'Típica renovación semestral automática',
+                      hintText: 'Fecha de renovación semestral automatica',
                     ),
                   ),
                 ),
               ),
               const SizedBox(height: 15),
               Center(
-                child: GestureDetector(
-                  onTap: _selectPhotoSource,
-                  child: Container(
-                    width: 150,
-                    height: 150,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey),
-                      borderRadius: BorderRadius.circular(8),
-                      color: Colors.grey.shade200,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        'Agrega un foto para el carnet digital (opcional)',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
-                    child: _photoBytes == null
-                        ? Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: const [
-                              Icon(Icons.photo_camera, size: 48),
-                              SizedBox(height: 8),
-                              Text('JPG/PNG/WebP · Máx 10MB', style: TextStyle(fontSize: 12)),
-                            ],
-                          )
-                        : Image.memory(_photoBytes!, fit: BoxFit.cover),
-                  ),
+                    GestureDetector(
+                      onTap: _selectPhotoSource,
+                      child: Builder(
+                        builder: (context) {
+                          final theme = Theme.of(context);
+                          final isDark = theme.brightness == Brightness.dark;
+                          final bg = isDark
+                              ? Colors.white.withValues(alpha: 0.06)
+                              : BrandColors.mist;
+                          final border = isDark
+                              ? theme.colorScheme.outlineVariant.withValues(
+                                  alpha: 0.5,
+                                )
+                              : theme.colorScheme.outlineVariant;
+                          final fg = isDark
+                              ? theme.colorScheme.onInverseSurface
+                              : theme.colorScheme.onSurface;
+                          return Container(
+                            width: 150,
+                            height: 150,
+                            decoration: BoxDecoration(
+                              border: Border.all(color: border),
+                              borderRadius: BorderRadius.circular(12),
+                              color: bg,
+                            ),
+                            child: _photoBytes == null
+                                ? Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.photo_camera,
+                                        size: 42,
+                                        color: fg.withValues(alpha: 0.9),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'JPG/PNG/WebP · Máx 10MB',
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              fontSize: 12,
+                                              color: fg.withValues(alpha: 0.8),
+                                            ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  )
+                                : ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Image.memory(
+                                      _photoBytes!,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 24),
@@ -397,11 +495,18 @@ class _RegisterPageState extends State<RegisterPage> {
                   final form = _formKey.currentState;
                   if (form != null && !form.validate()) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Corrige los errores antes de continuar.')),
+                      const SnackBar(
+                        content: Text(
+                          'Corrige los errores antes de continuar.',
+                        ),
+                      ),
                     );
                     return;
                   }
-                  final ok = await verifyEmailWithOtp(context, _emailController.text.trim());
+                  final ok = await verifyEmailWithOtp(
+                    context,
+                    _emailController.text.trim(),
+                  );
                   if (!ok) return;
                   _submit();
                 },

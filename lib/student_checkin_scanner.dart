@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'app_theme.dart';
 import 'api_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -129,7 +128,6 @@ class _StudentCheckInScannerState extends State<StudentCheckInScanner> {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Escanear QR de Asistencia'),
-          actions: const [ThemeToggleButton()],
         ),
         body: const Center(
           child: Padding(
@@ -148,7 +146,6 @@ class _StudentCheckInScannerState extends State<StudentCheckInScanner> {
             onPressed: () => _controller.toggleTorch(),
             icon: const Icon(Icons.flash_on),
           ),
-          const ThemeToggleButton(),
         ],
       ),
       body: Stack(

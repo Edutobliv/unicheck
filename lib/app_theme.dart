@@ -1,234 +1,138 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+class BrandColors {
+  static const Color emerald = Color(0xFF1B5E20);
+  static const Color mint = Color(0xFFA5D6A7);
+  static const Color charcoal = Color(0xFF101311);
+  static const Color slate = Color(0xFF161B17);
+  static const Color mist = Color(0xFFE6F4E5);
+}
 
 class AppThemes {
-  static const Color _seedLight = Color(0xFFA5D6A7); // verde pastel
-  static const Color _seedDark = Color(0xFF1B5E20); // verde oscuro
-
   static ThemeData light() {
-    final cs = ColorScheme.fromSeed(seedColor: _seedLight, brightness: Brightness.light);
+    final scheme = ColorScheme.fromSeed(
+      seedColor: BrandColors.mint,
+      brightness: Brightness.light,
+    );
     return ThemeData(
       useMaterial3: true,
-      colorScheme: cs,
-      scaffoldBackgroundColor: Colors.white,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: const Color(0xFFF4F9F1),
       visualDensity: VisualDensity.adaptivePlatformDensity,
+      textTheme: _textTheme(Brightness.light),
       appBarTheme: AppBarTheme(
         elevation: 0,
-        backgroundColor: cs.surface,
-        foregroundColor: cs.onSurface,
+        backgroundColor: Colors.transparent,
+        foregroundColor: scheme.onSurface,
         centerTitle: false,
       ),
       cardTheme: CardThemeData(
-        color: cs.surface,
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        color: Colors.white,
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        ),
-      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(style: _buttonStyle(scheme)),
+      textButtonTheme: TextButtonThemeData(style: _textButtonStyle(scheme)),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          foregroundColor: scheme.onSurface,
+          side: BorderSide(color: scheme.outline),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         ),
       ),
-      inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: cs.outlineVariant),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: cs.primary, width: 2),
-        ),
-      ),
+      inputDecorationTheme: _inputTheme(scheme, Brightness.light),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: cs.inverseSurface,
-        contentTextStyle: TextStyle(color: cs.onInverseSurface),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: scheme.inverseSurface,
+        contentTextStyle: TextStyle(color: scheme.onInverseSurface),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
     );
   }
 
-  static ThemeData dark() {
-    final cs = ColorScheme.fromSeed(seedColor: _seedDark, brightness: Brightness.dark);
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: cs,
-      scaffoldBackgroundColor: const Color(0xFF111213),
-      visualDensity: VisualDensity.adaptivePlatformDensity,
-      appBarTheme: AppBarTheme(
-        elevation: 0,
-        backgroundColor: const Color(0xFF111213),
-        foregroundColor: cs.onSurface,
-        centerTitle: false,
+  static TextTheme _textTheme(Brightness brightness) {
+    final onSurface = brightness == Brightness.dark
+        ? Colors.white
+        : const Color(0xFF101512);
+    const secondary = FontWeight.w500;
+    return TextTheme(
+      displaySmall: TextStyle(fontWeight: FontWeight.w700, color: onSurface),
+      headlineMedium: TextStyle(
+        fontWeight: FontWeight.w700,
+        color: onSurface,
+        height: 1.05,
       ),
-      cardTheme: CardThemeData(
-        color: cs.surface,
-        elevation: 1,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      titleLarge: TextStyle(fontWeight: FontWeight.w600, color: onSurface),
+      bodyLarge: TextStyle(
+        fontWeight: secondary,
+        color: onSurface.withValues(alpha: 0.88),
       ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      bodyMedium: TextStyle(color: onSurface.withValues(alpha: 0.78)),
+      labelLarge: TextStyle(
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.3,
+        color: onSurface,
+      ),
+    );
+  }
+
+  static ButtonStyle _buttonStyle(ColorScheme scheme) {
+    return ButtonStyle(
+      elevation: const WidgetStatePropertyAll(0),
+      backgroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return scheme.primary.withValues(alpha: 0.25);
+        }
+        return Color.alphaBlend(
+          BrandColors.mint.withValues(alpha: 0.2),
+          scheme.primary,
+        );
+      }),
+      foregroundColor: WidgetStatePropertyAll(scheme.onPrimary),
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 26, vertical: 16),
+      ),
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+    );
+  }
+
+  static ButtonStyle _textButtonStyle(ColorScheme scheme) {
+    return TextButton.styleFrom(
+      foregroundColor: scheme.primary,
+      textStyle: const TextStyle(fontWeight: FontWeight.w600),
+    );
+  }
+
+  static InputDecorationTheme _inputTheme(
+    ColorScheme scheme,
+    Brightness brightness,
+  ) {
+    final baseBorder = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: BorderSide(
+        color: scheme.outlineVariant.withValues(
+          alpha: brightness == Brightness.dark ? 0.6 : 1,
         ),
       ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        ),
+    );
+    return InputDecorationTheme(
+      filled: true,
+      fillColor: brightness == Brightness.dark
+          ? BrandColors.slate
+          : BrandColors.mist,
+      border: baseBorder,
+      enabledBorder: baseBorder,
+      focusedBorder: baseBorder.copyWith(
+        borderSide: BorderSide(color: scheme.primary, width: 2),
       ),
-      inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: cs.outlineVariant),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: cs.primary, width: 2),
-        ),
-      ),
-      snackBarTheme: SnackBarThemeData(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: cs.inverseSurface,
-        contentTextStyle: TextStyle(color: cs.onInverseSurface),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
     );
   }
 }
 
-class ThemeController extends StatefulWidget {
-  final Widget child;
-  const ThemeController({super.key, required this.child});
-
-  static _ThemeControllerState? maybeOf(BuildContext context) {
-    final scope = context.dependOnInheritedWidgetOfExactType<_ThemeScope>();
-    return scope?.state;
-  }
-
-  static _ThemeControllerState of(BuildContext context) {
-    final scope = context.dependOnInheritedWidgetOfExactType<_ThemeScope>();
-    assert(scope != null, 'ThemeController.of() called with no ThemeController ancestor');
-    return scope!.state;
-  }
-
-  @override
-  State<ThemeController> createState() => _ThemeControllerState();
-}
-
-class _ThemeControllerState extends State<ThemeController> {
-  static const _prefKey = 'theme_mode';
-  ThemeMode _mode = ThemeMode.system;
-
-  ThemeMode get mode => _mode;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final s = prefs.getString(_prefKey);
-    setState(() {
-      _mode = _fromString(s) ?? ThemeMode.system;
-    });
-  }
-
-  Future<void> setMode(ThemeMode m) async {
-    setState(() => _mode = m);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefKey, _toString(m));
-  }
-
-  Future<void> toggle() async {
-    if (_mode == ThemeMode.dark) {
-      await setMode(ThemeMode.light);
-    } else {
-      await setMode(ThemeMode.dark);
-    }
-  }
-
-  static String _toString(ThemeMode m) {
-    switch (m) {
-      case ThemeMode.dark:
-        return 'dark';
-      case ThemeMode.light:
-        return 'light';
-      case ThemeMode.system:
-        return 'system';
-    }
-  }
-
-  static ThemeMode? _fromString(String? s) {
-    if (s == 'dark') return ThemeMode.dark;
-    if (s == 'light') return ThemeMode.light;
-    if (s == 'system') return ThemeMode.system;
-    return null;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _ThemeScope(state: this, mode: _mode, child: widget.child);
-  }
-}
-
-class _ThemeScope extends InheritedWidget {
-  final _ThemeControllerState state;
-  final ThemeMode mode; // snapshot in time to detect changes
-  const _ThemeScope({required this.state, required this.mode, required super.child});
-
-  @override
-  bool updateShouldNotify(covariant _ThemeScope oldWidget) => oldWidget.mode != mode;
-}
-
-class ThemeToggleButton extends StatelessWidget {
-  const ThemeToggleButton({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final controller = ThemeController.maybeOf(context);
-    final mode = controller?.mode ?? ThemeMode.system;
-    final isDark = mode == ThemeMode.dark;
-    final tooltip = () {
-      switch (mode) {
-        case ThemeMode.dark:
-          return 'Modo: oscuro (toca: claro, mantén: sistema)';
-        case ThemeMode.light:
-          return 'Modo: claro (toca: oscuro, mantén: sistema)';
-        case ThemeMode.system:
-          return 'Modo: sistema (toca: oscuro)';
-      }
-    }();
-
-    return GestureDetector(
-      onLongPress: () => controller?.setMode(ThemeMode.system),
-      child: IconButton(
-        tooltip: tooltip,
-        onPressed: () {
-          if (controller == null) return;
-          if (mode == ThemeMode.system) {
-            controller.setMode(ThemeMode.dark);
-          } else {
-            controller.toggle();
-          }
-        },
-        icon: Icon(
-          mode == ThemeMode.system
-              ? Icons.brightness_auto_rounded
-              : (isDark ? Icons.wb_sunny_rounded : Icons.nightlight_round),
-        ),
-      ),
-    );
-  }
-}
+// Dark mode and toggle removed; no UI toggle remains.

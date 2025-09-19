@@ -1,10 +1,9 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'app_theme.dart';
 import 'api_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -57,7 +56,7 @@ class _PorterPageState extends State<PorterPage> {
     if (code == null) return;
     setState(() {
       _locked = true;
-      _scanning = false; // oculta la cÃ¡mara para evitar dobles capturas
+      _scanning = false; // oculta la cámara para evitar dobles capturas
     });
     final token = _extractToken(code.trim());
     _setupCountdownFromToken(token);
@@ -126,17 +125,21 @@ class _PorterPageState extends State<PorterPage> {
 
   Future<void> _verifyToken(String token) async {
     try {
-      setState(() { _verifying = true; });
+      setState(() {
+        _verifying = true;
+      });
       final prefs = await SharedPreferences.getInstance();
       final auth = prefs.getString('token');
-      final resp = await http.post(
-        Uri.parse("$_baseUrl/verify"),
-        headers: {
-          'Content-Type': 'application/json',
-          if (auth != null) 'Authorization': 'Bearer $auth',
-        },
-        body: jsonEncode({'token': token}),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .post(
+            Uri.parse("$_baseUrl/verify"),
+            headers: {
+              'Content-Type': 'application/json',
+              if (auth != null) 'Authorization': 'Bearer $auth',
+            },
+            body: jsonEncode({'token': token}),
+          )
+          .timeout(const Duration(seconds: 10));
       if (!mounted) return;
       Map<String, dynamic> body;
       try {
@@ -160,7 +163,10 @@ class _PorterPageState extends State<PorterPage> {
         _result = {'valid': false, 'reason': 'network_error'};
       });
     } finally {
-      if (mounted) setState(() { _verifying = false; });
+      if (mounted)
+        setState(() {
+          _verifying = false;
+        });
     }
   }
 
@@ -176,17 +182,18 @@ class _PorterPageState extends State<PorterPage> {
 
   @override
   Widget build(BuildContext context) {
-    // En web, mostrar mensaje y no intentar usar cÃ¡mara
+    // En web, mostrar mensaje y no intentar usar cámara
     if (kIsWeb) {
       return Scaffold(
         appBar: AppBar(
           title: const Text('Panel del Portero'),
-          actions: const [ThemeToggleButton()],
         ),
         body: const Center(
           child: Padding(
             padding: EdgeInsets.all(16),
-            child: Text('El panel de porterÃ­a no estÃ¡ disponible en la web.\nPor favor usa el celular vinculado a tu cuenta.'),
+            child: Text(
+              'El panel de porterí­a no está disponible en la web.\nPor favor usa el celular vinculado a tu cuenta.',
+            ),
           ),
         ),
       );
@@ -197,7 +204,6 @@ class _PorterPageState extends State<PorterPage> {
       appBar: AppBar(
         title: const Text('Panel del Portero'),
         actions: [
-          const ThemeToggleButton(),
           IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
         ],
       ),
@@ -262,7 +268,7 @@ class _PorterPageState extends State<PorterPage> {
                       )
                     : Container(
                         color: Colors.black12,
-                        child: const Center(child: Text('CÃ¡mara pausada')),
+                        child: const Center(child: Text('Cámara pausada')),
                       ),
               ),
             ),
@@ -276,9 +282,9 @@ class _PorterPageState extends State<PorterPage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                   SizedBox(width: 8),
-                  Text('Verificando...')
+                  Text('Verificando...'),
                 ],
-              )
+              ),
             ],
           ],
         ),
@@ -296,19 +302,25 @@ class _ResultCard extends StatelessWidget {
     final ok = result['valid'] == true;
     final student = (result['student'] as Map?)?.cast<String, dynamic>();
     final color = ok ? Colors.green.shade600 : Colors.red.shade700;
-    final title = ok ? 'VÃ¡lido' : 'No vÃ¡lido';
+    final title = ok ? 'Válido' : 'No válido';
     String subtitle;
     if (ok) {
-      subtitle = (student?['name'] ?? '').toString() + ' - ' + (student?['email'] ?? '').toString() + '\nCodigo: ' + (student?['code'] ?? '').toString();
+      subtitle =
+          (student?['name'] ?? '').toString() +
+          ' - ' +
+          (student?['email'] ?? '').toString() +
+          '\nCodigo: ' +
+          (student?['code'] ?? '').toString();
     } else {
-      subtitle = 'Motivo: ' + _reasonLabel((result['reason'] ?? 'invalid').toString());
+      subtitle =
+          'Motivo: ' + _reasonLabel((result['reason'] ?? 'invalid').toString());
     }
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.12),
         border: Border.all(color: color),
         borderRadius: BorderRadius.circular(12),
       ),
@@ -348,7 +360,7 @@ String _reasonLabel(String code) {
     case 'missing_token':
     case 'invalid_token':
     case 'missing_jti':
-      return 'QR invÃ¡lido';
+      return 'QR inválido';
     case 'network_error':
       return 'Error de red';
     default:
@@ -390,4 +402,3 @@ class _ExpiryIndicator extends StatelessWidget {
     );
   }
 }
-

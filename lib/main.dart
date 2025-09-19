@@ -1,4 +1,4 @@
-import "dart:async";
+﻿import "dart:async";
 import "dart:convert";
 import "dart:typed_data";
 import "package:cached_network_image/cached_network_image.dart";
@@ -30,7 +30,7 @@ Future<void> main() async {
   } catch (_) {
     // If not configured, app still runs and falls back to backend-only flows.
   }
-  runApp(ThemeController(child: const App()));
+  runApp(const App());
 }
 
 class App extends StatelessWidget {
@@ -38,12 +38,9 @@ class App extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = ThemeController.maybeOf(context);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: AppThemes.light(),
-      darkTheme: AppThemes.dark(),
-      themeMode: theme?.mode ?? ThemeMode.system,
       routes: {
         '/carnet': (_) => const CarnetPage(),
         '/login': (_) => const LoginPage(),
@@ -72,17 +69,18 @@ class _CarnetPageState extends State<CarnetPage> {
   Map<String, dynamic>? _student;
   String? _ephemeralCode;
   final ImagePicker _picker = ImagePicker();
-  String? _photoEnsuredForCode; // evita solicitar la foto muchas veces por sesión
+  String?
+  _photoEnsuredForCode; // evita solicitar la foto muchas veces por sesiÃ³n
 
   // Colores / estilos
   static const Color rojoMarca = Color(0xFFB0191D);
   static const Color grisTexto = Color(0xFF424242);
 
-  // tamaños (ajustados para parecerse a la maqueta)
+  // tamaÃ±os (ajustados para parecerse a la maqueta)
   static const double kPaddingTarjeta = 16;
   static const double kFotoW = 150;
   static const double kFotoH = 175;
-  static const double kQrSize = 190; // QR más grande
+  static const double kQrSize = 190; // QR mÃ¡s grande
 
   @override
   void initState() {
@@ -96,22 +94,30 @@ class _CarnetPageState extends State<CarnetPage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final code = prefs.getString('code');
-      final cachedPhotoData = code != null ? prefs.getString('photoData:'+code) : null;
-      final cachedPhotoUrl = code != null ? prefs.getString('photoUrl:'+code) : null;
+      final cachedPhotoData = code != null
+          ? prefs.getString('photoData:' + code)
+          : null;
+      final cachedPhotoUrl = code != null
+          ? prefs.getString('photoUrl:' + code)
+          : null;
       setState(() {
         _student = {
           if (code != null) 'code': code,
           if (prefs.getString('name') != null) 'name': prefs.getString('name'),
-          if (prefs.getString('program') != null) 'program': prefs.getString('program'),
-          if (prefs.getString('expiresAt') != null) 'expiresAt': prefs.getString('expiresAt'),
-          if (cachedPhotoData != null) 'photoUrl': cachedPhotoData
-          else if (cachedPhotoUrl != null) 'photoUrl': cachedPhotoUrl,
+          if (prefs.getString('program') != null)
+            'program': prefs.getString('program'),
+          if (prefs.getString('expiresAt') != null)
+            'expiresAt': prefs.getString('expiresAt'),
+          if (cachedPhotoData != null)
+            'photoUrl': cachedPhotoData
+          else if (cachedPhotoUrl != null)
+            'photoUrl': cachedPhotoUrl,
         }..removeWhere((k, v) => v == null);
       });
     } catch (_) {}
   }
 
-    Future<void> _fetchQr() async {
+  Future<void> _fetchQr() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
@@ -134,7 +140,7 @@ class _CarnetPageState extends State<CarnetPage> {
           _student = (data["student"] as Map?)?.cast<String, dynamic>();
           _ephemeralCode = data["ephemeralCode"] as String?;
         });
-        // Completa valores faltantes desde caché (por ejemplo, nombre)
+        // Completa valores faltantes desde cachÃ© (por ejemplo, nombre)
         try {
           if (_student != null) {
             final cachedName = prefs.getString('name');
@@ -145,17 +151,20 @@ class _CarnetPageState extends State<CarnetPage> {
           }
         } catch (_) {}
         await _ensurePhotoCacheForCurrentStudent();
-        // Guardado/caché de foto firmada si viene en la respuesta
+        // Guardado/cachÃ© de foto firmada si viene en la respuesta
         final stu = _student;
         if (stu != null) {
           final signed = stu['photoUrl'] as String?;
           final expIn = (stu['photoUrlExpiresIn'] as num?)?.toInt() ?? 0;
           final code = (stu['code'] as String?) ?? prefs.getString('code');
-          if (code != null && signed != null && signed.isNotEmpty && expIn > 0) {
+          if (code != null &&
+              signed != null &&
+              signed.isNotEmpty &&
+              expIn > 0) {
             final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
             final expAt = now + expIn;
-            await prefs.setString('photoUrl:'+code, signed);
-            await prefs.setInt('photoUrlExp:'+code, expAt);
+            await prefs.setString('photoUrl:' + code, signed);
+            await prefs.setInt('photoUrlExp:' + code, expAt);
           } else {
             await _maybeRefreshSignedPhoto(prefs);
           }
@@ -164,25 +173,36 @@ class _CarnetPageState extends State<CarnetPage> {
         _maybeShowNoPhotoNotice();
       } else {
         if (resp.statusCode == 401) {
-          if (await _tryRefreshToken()) { await _fetchQr(); return; }
-          _toast('Sesión expirada. Por favor ingresa nuevamente.');
+          if (await _tryRefreshToken()) {
+            await _fetchQr();
+            return;
+          }
+          _toast('SesiÃ³n expirada. Por favor ingresa nuevamente.');
           await _logout();
           return;
         }
-        _toast("No se pudo generar el QR (".toString() + resp.statusCode.toString() + ")");
+        _toast(
+          "No se pudo generar el QR (".toString() +
+              resp.statusCode.toString() +
+              ")",
+        );
       }
     } catch (e) {
       _toast("Error de red: " + e.toString());
     }
-  }Future<void> _ensurePhotoCacheForCurrentStudent() async {
+  }
+
+  Future<void> _ensurePhotoCacheForCurrentStudent() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final stu = _student;
       final code = (stu?['code'] as String?) ?? prefs.getString('code');
       if (code == null) return;
-      final existingData = prefs.getString('photoData:'+code);
+      final existingData = prefs.getString('photoData:' + code);
       if (existingData != null && existingData.isNotEmpty) {
-        setState(() { (_student ??= <String,dynamic>{})['photoUrl'] = existingData; });
+        setState(() {
+          (_student ??= <String, dynamic>{})['photoUrl'] = existingData;
+        });
         _photoEnsuredForCode = code;
         return;
       }
@@ -195,10 +215,12 @@ class _CarnetPageState extends State<CarnetPage> {
       }
       final token = prefs.getString('token');
       if (token == null) return;
-      final resp = await http.get(
-        Uri.parse("$_baseUrl/users/me/photo-url"),
-        headers: { 'Authorization': 'Bearer $token' },
-      ).timeout(const Duration(seconds: 8));
+      final resp = await http
+          .get(
+            Uri.parse("$_baseUrl/users/me/photo-url"),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 8));
       if (resp.statusCode == 200) {
         final m = jsonDecode(resp.body) as Map<String, dynamic>;
         final signed = m['photoUrl'] as String?;
@@ -210,24 +232,33 @@ class _CarnetPageState extends State<CarnetPage> {
     } catch (_) {}
   }
 
-  Future<void> _cachePhotoFromSignedUrlOnce(String signedUrl, SharedPreferences prefs, String code) async {
+  Future<void> _cachePhotoFromSignedUrlOnce(
+    String signedUrl,
+    SharedPreferences prefs,
+    String code,
+  ) async {
     try {
-      final r = await http.get(Uri.parse(signedUrl)).timeout(const Duration(seconds: 10));
+      final r = await http
+          .get(Uri.parse(signedUrl))
+          .timeout(const Duration(seconds: 10));
       if (r.statusCode == 200) {
         final bytes = r.bodyBytes;
         final header = bytes.length >= 12 ? bytes.sublist(0, 12) : bytes;
-        final detected = mime.lookupMimeType('', headerBytes: header) ?? 'image/jpeg';
+        final detected =
+            mime.lookupMimeType('', headerBytes: header) ?? 'image/jpeg';
         final dataUrl = 'data:$detected;base64,' + base64Encode(bytes);
-        await prefs.setString('photoData:'+code, dataUrl);
-        await prefs.remove('photoUrl:'+code);
-        await prefs.remove('photoUrlExp:'+code);
+        await prefs.setString('photoData:' + code, dataUrl);
+        await prefs.remove('photoUrl:' + code);
+        await prefs.remove('photoUrlExp:' + code);
         if (!mounted) return;
-        setState(() { (_student ??= <String,dynamic>{})['photoUrl'] = dataUrl; });
+        setState(() {
+          (_student ??= <String, dynamic>{})['photoUrl'] = dataUrl;
+        });
       } else {
-        await prefs.setString('photoUrl:'+code, signedUrl);
+        await prefs.setString('photoUrl:' + code, signedUrl);
       }
     } catch (_) {
-      await prefs.setString('photoUrl:'+code, signedUrl);
+      await prefs.setString('photoUrl:' + code, signedUrl);
     }
   }
 
@@ -236,11 +267,13 @@ class _CarnetPageState extends State<CarnetPage> {
       final prefs = await SharedPreferences.getInstance();
       final rt = prefs.getString('refreshToken');
       if (rt == null) return false;
-      final resp = await http.post(
-        Uri.parse('$_baseUrl/auth/refresh'),
-        headers: {'Content-Type':'application/json'},
-        body: jsonEncode({'refreshToken': rt}),
-      ).timeout(const Duration(seconds: 10));
+      final resp = await http
+          .post(
+            Uri.parse('$_baseUrl/auth/refresh'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'refreshToken': rt}),
+          )
+          .timeout(const Duration(seconds: 10));
       if (resp.statusCode == 200) {
         final m = jsonDecode(resp.body) as Map<String, dynamic>;
         await prefs.setString('token', m['token'] as String);
@@ -252,6 +285,7 @@ class _CarnetPageState extends State<CarnetPage> {
     } catch (_) {}
     return false;
   }
+
   Future<void> _maybeRefreshSignedPhoto(SharedPreferences? givenPrefs) async {
     try {
       final prefs = givenPrefs ?? await SharedPreferences.getInstance();
@@ -260,16 +294,20 @@ class _CarnetPageState extends State<CarnetPage> {
       final code = prefs.getString('code');
       // Si ya tenemos data URL o ya lo intentamos para este code, salir
       if (code != null) {
-        final cachedData = prefs.getString('photoData:'+code);
+        final cachedData = prefs.getString('photoData:' + code);
         if (cachedData != null && cachedData.isNotEmpty) {
-          setState(() { (_student ??= <String,dynamic>{})['photoUrl'] = cachedData; });
+          setState(() {
+            (_student ??= <String, dynamic>{})['photoUrl'] = cachedData;
+          });
         }
         if (_photoEnsuredForCode == code) return;
       }
-      final resp = await http.get(
-        Uri.parse("$_baseUrl/users/me/photo-url"),
-        headers: { 'Authorization': 'Bearer $token' },
-      ).timeout(const Duration(seconds: 8));
+      final resp = await http
+          .get(
+            Uri.parse("$_baseUrl/users/me/photo-url"),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 8));
       if (resp.statusCode == 200) {
         final m = jsonDecode(resp.body) as Map<String, dynamic>;
         final signed = m['photoUrl'] as String?;
@@ -287,7 +325,9 @@ class _CarnetPageState extends State<CarnetPage> {
       messenger.clearMaterialBanners();
       messenger.showMaterialBanner(
         MaterialBanner(
-          content: const Text('Por favor sube una foto de perfil para tu carnet.'),
+          content: const Text(
+            'Por favor sube una foto de perfil para tu carnet.',
+          ),
           leading: const Icon(Icons.info_outline),
           actions: [
             TextButton(
@@ -342,14 +382,16 @@ class _CarnetPageState extends State<CarnetPage> {
       if (file == null) return;
 
       final bytes = await file.readAsBytes();
-      // Validación ligera (el backend reoptimiza a <=3MB)
+      // ValidaciÃ³n ligera (el backend reoptimiza a <=3MB)
       if (bytes.length > 20 * 1024 * 1024) {
         _toast('La imagen es muy grande (>20MB).');
         return;
       }
       final header = bytes.length >= 12 ? bytes.sublist(0, 12) : bytes;
-      final detected = mime.lookupMimeType(file.path, headerBytes: header) ?? 'application/octet-stream';
-      if (!{'image/jpeg','image/png','image/webp'}.contains(detected)) {
+      final detected =
+          mime.lookupMimeType(file.path, headerBytes: header) ??
+          'application/octet-stream';
+      if (!{'image/jpeg', 'image/png', 'image/webp'}.contains(detected)) {
         _toast('Formato no permitido. Usa JPG, PNG o WebP.');
         return;
       }
@@ -358,34 +400,40 @@ class _CarnetPageState extends State<CarnetPage> {
       final token = prefs.getString('token');
       final code = prefs.getString('code');
       if (token == null || code == null) {
-        _toast("Sesión no válida. Ingresa nuevamente.");
+        _toast("SesiÃ³n no vÃ¡lida. Ingresa nuevamente.");
         await _logout();
         return;
       }
 
       final dataUrl = 'data:$detected;base64,' + base64Encode(bytes);
-      final resp = await http.put(
-        Uri.parse('$_baseUrl/users/me/photo'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'photo': dataUrl}),
-      ).timeout(const Duration(seconds: 15));
+      final resp = await http
+          .put(
+            Uri.parse('$_baseUrl/users/me/photo'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({'photo': dataUrl}),
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (resp.statusCode == 200) {
-        // cachea inmediatamente la imagen que el usuario subió
-        await prefs.setString('photoData:'+code, dataUrl);
-        await prefs.remove('photoUrl:'+code);
-        await prefs.remove('photoUrlExp:'+code);
+        // cachea inmediatamente la imagen que el usuario subiÃ³
+        await prefs.setString('photoData:' + code, dataUrl);
+        await prefs.remove('photoUrl:' + code);
+        await prefs.remove('photoUrlExp:' + code);
         if (!mounted) return;
-        setState(() { (_student ??= <String, dynamic>{})['photoUrl'] = dataUrl; });
+        setState(() {
+          (_student ??= <String, dynamic>{})['photoUrl'] = dataUrl;
+        });
         _toast('Foto actualizada.');
       } else if (resp.statusCode == 401) {
-        _toast("Sesión expirada. Ingresa nuevamente.");
+        _toast("SesiÃ³n expirada. Ingresa nuevamente.");
         await _logout();
       } else {
-        _toast('No se pudo subir la foto (".toString() + resp.statusCode.toString() + ").');
+        _toast(
+          'No se pudo subir la foto (".toString() + resp.statusCode.toString() + ").',
+        );
       }
     } catch (e) {
       _toast('Error al subir la foto: ' + e.toString());
@@ -419,9 +467,9 @@ class _CarnetPageState extends State<CarnetPage> {
     final prefs = await SharedPreferences.getInstance();
     final code = prefs.getString('code');
     if (code != null) {
-      await prefs.remove('photoUrl:'+code);
-      await prefs.remove('photoUrlExp:'+code);
-      await prefs.remove('photoData:'+code);
+      await prefs.remove('photoUrl:' + code);
+      await prefs.remove('photoUrlExp:' + code);
+      await prefs.remove('photoData:' + code);
     }
     // Limpieza preventiva de llaves globales antiguas
     await prefs.remove('photoUrl');
@@ -440,18 +488,24 @@ class _CarnetPageState extends State<CarnetPage> {
       return Scaffold(
         appBar: AppBar(
           title: const Text("Carnet Digital"),
-          actions: const [ThemeToggleButton()],
         ),
         body: const Center(
           child: Padding(
             padding: EdgeInsets.all(16),
-            child: Text("El carnet digital está disponible solo en la app móvil.\nPor favor ingresa desde tu celular vinculado."),
+            child: Text(
+              "El carnet digital estÃ¡ disponible solo en la app mÃ³vil.\nPor favor ingresa desde tu celular vinculado.",
+            ),
           ),
         ),
       );
     }
 
     final s = _student;
+
+    // Calcular el color en tiempo de ejecución (no puede estar en una const)
+    final Color onSurface70 = Theme.of(
+      context,
+    ).colorScheme.onSurface.withOpacity(0.7);
 
     return Scaffold(
       appBar: AppBar(
@@ -462,7 +516,6 @@ class _CarnetPageState extends State<CarnetPage> {
             onPressed: () => Navigator.of(context).pushNamed('/scan-checkin'),
             icon: const Icon(Icons.qr_code_scanner),
           ),
-          const ThemeToggleButton(),
           IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
         ],
       ),
@@ -488,7 +541,7 @@ class _CarnetPageState extends State<CarnetPage> {
                   Center(
                     child: Image.asset(
                       "assets/img/logo_piloto.png",
-                      height: 90, // ajusta el tamaño del logo
+                      height: 90, // ajusta el tamaÃ±o del logo
                       fit: BoxFit.contain,
                     ),
                   ),
@@ -518,7 +571,10 @@ class _CarnetPageState extends State<CarnetPage> {
                               _QrGrande(qrUrl: _qrUrl, size: kQrSize),
                               if (_ephemeralCode != null) ...[
                                 const SizedBox(height: 8),
-                                Text("Código: " + _ephemeralCode!, style: const TextStyle(fontSize: 12)),
+                                Text(
+                                  "CÃ³digo: " + _ephemeralCode!,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
                               ],
                             ],
                           ),
@@ -530,25 +586,29 @@ class _CarnetPageState extends State<CarnetPage> {
 
                   // NOMBRE
                   const _Label(" NOMBRE"),
-                  Builder(builder: (context) {
-                    final name = s?['name']?.toString() ?? '';
-                    return Text(
-                      (name.isNotEmpty ? name : "Error\nComunicate con soporte")
-                          .toUpperCase(),
-                      style: const TextStyle(
-                        color: grisTexto,
-                        fontSize: 18,
-                        height: 1.15,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    );
-                  }),
+                  Builder(
+                    builder: (context) {
+                      final name = s?['name']?.toString() ?? '';
+                      return Text(
+                        (name.isNotEmpty
+                                ? name
+                                : "Error\nComunicate con soporte")
+                            .toUpperCase(),
+                        style: const TextStyle(
+                          color: grisTexto,
+                          fontSize: 18,
+                          height: 1.15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      );
+                    },
+                  ),
                   const SizedBox(height: 10),
 
-                  // CÓDIGO / VENCE
+                  // CÃ“DIGO / VENCE
                   Row(
                     children: const [
-                      Expanded(child: _Label("CÓDIGO")),
+                      Expanded(child: _Label("CÃ“DIGO")),
                       SizedBox(width: 6),
                       Expanded(child: _Label("VENCE")),
                     ],
@@ -621,7 +681,7 @@ class _CarnetPageState extends State<CarnetPage> {
             ),
 
             const SizedBox(height: 14),
-            // Leyenda de expiración (fuera de la tarjeta)
+            // Leyenda de expiraciÃ³n (fuera de la tarjeta)
             Column(
               children: [
                 RichText(
@@ -630,7 +690,7 @@ class _CarnetPageState extends State<CarnetPage> {
                     style: const TextStyle(fontFamily: 'Roboto'),
                     children: [
                       const TextSpan(
-                        text: "CÓDIGO QR\n",
+                        text: "CÃ“DIGO QR\n",
                         style: TextStyle(
                           color: Color(0xFFB0191D),
                           fontSize: 14,
@@ -660,8 +720,13 @@ class _CarnetPageState extends State<CarnetPage> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  "Se renueva automáticamente",
-                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.8), fontSize: 13),
+                  "Se renueva automÃ¡ticamente",
+                  style: TextStyle(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant.withOpacity(0.85),
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
@@ -685,12 +750,15 @@ class _Label extends StatelessWidget {
   const _Label(this.text);
   @override
   Widget build(BuildContext context) {
+    // Calculate color at runtime, can't be const
+    final color = Theme.of(context).colorScheme.onSurface.withOpacity(0.7);
+
     return Text(
       text,
-      style: const TextStyle(
+      style: TextStyle(
         letterSpacing: 1.4,
         fontSize: 11,
-        color: Colors.black54,
+        color: color, // Use calculated color
         fontWeight: FontWeight.w700,
       ),
     );
@@ -806,7 +874,9 @@ class _QrGrande extends StatelessWidget {
               transitionBuilder: (child, anim) => FadeTransition(
                 opacity: anim,
                 child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.98, end: 1).animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                  scale: Tween<double>(begin: 0.98, end: 1).animate(
+                    CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+                  ),
                   child: child,
                 ),
               ),
