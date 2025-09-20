@@ -93,18 +93,30 @@ let swaggerDoc = null;
 try {
   const specPath = path.join(__dirname, 'openapi.yaml');
   swaggerDoc = YAML.load(specPath);
-  // Tip: si Helmet CSP causara problemas con Swagger UI, se puede desactivar CSP solo para /docs
-  // app.use('/docs', helmet({ contentSecurityPolicy: false }));
-  app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDoc, {
+  // Rutas para servir el spec
+  app.get('/openapi.yaml', (req, res) => {
+    res.type('text/yaml').send(fs.readFileSync(specPath, 'utf8'));
+  });
+  app.get('/openapi.json', (req, res) => {
+    res.type('application/json').send(JSON.stringify(swaggerDoc));
+  });
+
+  // Montar Swagger UI con CSP relajado solo en /docs y apuntando al spec
+  const docsRouter = express.Router();
+  docsRouter.use(helmet({ contentSecurityPolicy: false }));
+  docsRouter.use(swaggerUi.serve, swaggerUi.setup(swaggerDoc, {
     explorer: true,
     swaggerOptions: {
+      url: '/openapi.yaml',
+      urls: [
+        { url: '/openapi.yaml', name: 'OpenAPI (YAML)' },
+        { url: '/openapi.json', name: 'OpenAPI (JSON)' },
+      ],
       persistAuthorization: true,
       displayOperationId: true,
     },
   }));
-  app.get('/openapi.yaml', (req, res) => {
-    res.type('text/yaml').send(fs.readFileSync(specPath, 'utf8'));
-  });
+  app.use('/docs', docsRouter);
 } catch (e) {
   console.warn('Swagger/OpenAPI no disponible:', e?.message || String(e));
 }
