@@ -6,6 +6,11 @@ try { dns.setDefaultResultOrder('ipv4first'); } catch {}
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import swaggerUi from 'swagger-ui-express';
+import YAML from 'yamljs';
 import { generateKeyPair, SignJWT, jwtVerify, exportJWK, importJWK } from "jose";
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcryptjs";
@@ -80,6 +85,23 @@ app.use(cors());
 app.use(helmet());
 // Allow up to ~20MB JSON payloads to accommodate base64 images (~1.33x overhead for 10MB raw)
 app.use(express.json({ limit: '20mb' }));
+
+// Swagger UI / OpenAPI
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+let swaggerDoc = null;
+try {
+  const specPath = path.join(__dirname, 'openapi.yaml');
+  swaggerDoc = YAML.load(specPath);
+  // Tip: si Helmet CSP causara problemas con Swagger UI, se puede desactivar CSP solo para /docs
+  // app.use('/docs', helmet({ contentSecurityPolicy: false }));
+  app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDoc, { explorer: true }));
+  app.get('/openapi.yaml', (req, res) => {
+    res.type('text/yaml').send(fs.readFileSync(specPath, 'utf8'));
+  });
+} catch (e) {
+  console.warn('Swagger/OpenAPI no disponible:', e?.message || String(e));
+}
 
 let privateKey;
 let publicJwk;
