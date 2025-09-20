@@ -102,7 +102,9 @@ components:
         program: { type: string, nullable: true }
         expiresAt: { type: string, description: DD/MM/YYYY }
         role: { type: string, enum: [student, teacher, porter], default: student }
-        photo: { type: string, description: Data URL (image/*;base64,...) }
+        photo:
+          type: string
+          description: Data URL (image/*;base64,...)
       required: [code, email, name, firstName, lastName, password]
       example:
         code: STU999
@@ -127,11 +129,17 @@ components:
         expiresIn: { type: integer, description: Segundos }
     PhotoUpdateRequest:
       type: object
-      properties: { photo: { type: string, description: Data URL (image/*;base64,...) } }
+      properties:
+        photo:
+          type: string
+          description: Data URL (image/*;base64,...)
       required: [photo]
     IssueEphemeralRequest:
       type: object
-      properties: { deviceId: { type: string, description: Identificador del dispositivo del estudiante } }
+      properties:
+        deviceId:
+          type: string
+          description: Identificador del dispositivo del estudiante
     IssueEphemeralResponse:
       type: object
       properties:
