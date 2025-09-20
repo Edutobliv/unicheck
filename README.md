@@ -306,3 +306,77 @@ on public.users for each row execute function public.users_sync_full_name();
 - Key endpoints: `/auth/register`, `/auth/login`, `/issue-ephemeral`, `/verify`, `/prof/start-session`, `/attendance/check-in`.
 - Debug: `/__debug?k=...` controlled by `DEBUG_KEY` (staging only).
 - The app caches signed avatar URLs and refreshes on expiry.
+## API Docs y ejemplos cURL
+
+La API expone Swagger UI en `/docs` y el spec en `/openapi.yaml`.
+
+- Local: `http://localhost:3000/docs`
+- Render: agrega `/docs` a la URL pública de tu servicio
+
+Autenticación: la mayoría de endpoints usan `Authorization: Bearer <JWT>`.
+
+### Flujo típico
+
+1) Login (obtén `token` y `refreshToken`)
+
+```bash
+BASE=http://localhost:3000
+curl -sX POST "$BASE/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"ana.perez@uni.edu","password":"Secreta123"}' | jq .
+```
+
+PowerShell (sin jq):
+
+```powershell
+$BASE = 'http://localhost:3000'
+curl -Method Post "$BASE/auth/login" -ContentType 'application/json' \
+  -Body '{"email":"ana.perez@uni.edu","password":"Secreta123"}' | \
+  Select-Object -ExpandProperty Content | ConvertFrom-Json
+```
+
+2) Usar el token como Student (emitir QR efímero)
+
+```bash
+TOKEN_STU="<Pega token del paso 1>"
+curl -sX POST "$BASE/issue-ephemeral" \
+  -H "Authorization: Bearer $TOKEN_STU" \
+  -H 'Content-Type: application/json' \
+  -d '{"deviceId":"pixel-7-ana"}' | jq .
+```
+
+3) Verificar QR (porter opcional)
+
+```bash
+QR_JWT="<token devuelto en issue-ephemeral>"
+TOKEN_POR="<token de porter si lo tienes>"
+curl -sX POST "$BASE/verify" \
+  -H "Authorization: Bearer $TOKEN_POR" \
+  -H 'Content-Type: application/json' \
+  -d "{\"token\":\"$QR_JWT\",\"gate\":\"GATE-1\",\"direction\":\"in\"}" | jq .
+```
+
+4) Flujo profesor
+
+```bash
+TOKEN_TCH="<token de teacher>"
+# Iniciar sesión de clase
+curl -sX POST "$BASE/prof/start-session" \
+  -H "Authorization: Bearer $TOKEN_TCH" -H 'Content-Type: application/json' \
+  -d '{"ttlSeconds":600}' | jq .
+
+# Cerrar sesión de clase
+SESSION_ID="<id devuelto>"
+curl -sX POST "$BASE/prof/end-session" \
+  -H "Authorization: Bearer $TOKEN_TCH" -H 'Content-Type: application/json' \
+  -d "{\"sessionId\":\"$SESSION_ID\"}" | jq .
+```
+
+### Errores comunes (respuesta JSON)
+
+- 400 faltan/invalid params: `{ "error": "missing_params", "message": "Faltan parámetros" }`
+- 401 no autenticado/token inválido: `{ "error": "invalid_token", "message": "Token inválido" }`
+- 403 rol insuficiente: `{ "error": "forbidden", "message": "Rol insuficiente" }`
+- 404 sesión no encontrada: `{ "error": "session_not_found" }`
+
+Nota: Swagger UI ahora recuerda el `Authorize` (persistAuthorization) y muestra `operationId` para facilitar pruebas.

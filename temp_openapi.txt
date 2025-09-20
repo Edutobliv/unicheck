@@ -1,0 +1,673 @@
+﻿openapi: 3.0.3
+info:
+  title: UniCheck API
+  version: 1.0.0
+  description: |
+    API para autenticaciÃ³n, emisiÃ³n/validaciÃ³n de QR efÃ­mero y gestiÃ³n de asistencia.
+    
+    Notas:
+    - AutenticaciÃ³n por JWT (Bearer) para usuarios (student/teacher/porter).
+    - El endpoint /verify acepta opcionalmente un Bearer de porter para atribuir el escaneo.
+    - Fechas de expiraciÃ³n de estudiantes se formatean como DD/MM/YYYY.
+servers:
+  - url: https://unicheck-api.onrender.com
+    description: Render (producciÃ³n)
+  - url: http://localhost:3000
+    description: Desarrollo local
+tags:
+  - name: System
+    description: Salud y claves pÃºblicas
+  - name: Auth
+    description: Inicio de sesiÃ³n y registro
+  - name: Users
+    description: GestiÃ³n de perfil del usuario autenticado
+  - name: QR
+    description: EmisiÃ³n de tokens/QR efÃ­meros
+  - name: Verify
+    description: VerificaciÃ³n de QR por porterÃ­a/servicio
+  - name: Professor
+    description: Sesiones de clase y asistencia
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Enviar `Authorization: Bearer <token>`"
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+    User:
+      type: object
+      properties:
+        code:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [student, teacher, porter]
+        name:
+          type: string
+        firstName:
+          type: string
+          nullable: true
+        middleName:
+          type: string
+          nullable: true
+        lastName:
+          type: string
+          nullable: true
+        secondLastName:
+          type: string
+          nullable: true
+        program:
+          type: string
+          nullable: true
+        expiresAt:
+          type: string
+          description: Fecha en formato DD/MM/YYYY
+          nullable: true
+        photoUrl:
+          type: string
+          format: uri
+          nullable: true
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        code:
+          type: string
+          description: CÃ³digo institucional
+        password:
+          type: string
+      required: [password]
+      description: Debe incluir `email` o `code` junto con `password`.
+      anyOf:
+        - required: [email]
+        - required: [code]
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+    RefreshRequest:
+      type: object
+      properties:
+        refreshToken:
+          type: string
+      required: [refreshToken]
+    RefreshResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        refreshToken:
+          type: string
+    RegisterRequest:
+      type: object
+      properties:
+        code:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        firstName:
+          type: string
+        middleName:
+          type: string
+          nullable: true
+        lastName:
+          type: string
+        secondLastName:
+          type: string
+          nullable: true
+        password:
+          type: string
+        program:
+          type: string
+          nullable: true
+        expiresAt:
+          type: string
+          description: DD/MM/YYYY; si falta, se asignan 6 meses
+        role:
+          type: string
+          enum: [student, teacher, porter]
+          default: student
+        photo:
+          type: string
+          description: Data URL (image/*;base64,...)
+      required: [code, email, name, firstName, lastName, password]
+    RegisterResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        ephemeralCode:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+    PhotoUrlResponse:
+      type: object
+      properties:
+        photoUrl:
+          type: string
+          format: uri
+          nullable: true
+        expiresIn:
+          type: integer
+          description: Segundos de validez de la URL firmada
+    PhotoUpdateRequest:
+      type: object
+      properties:
+        photo:
+          type: string
+          description: Data URL (image/*;base64,...)
+      required: [photo]
+    IssueEphemeralRequest:
+      type: object
+      properties:
+        deviceId:
+          type: string
+          description: Identificador del dispositivo del estudiante
+    IssueEphemeralResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT EdDSA efÃ­mero para el QR
+        qrUrl:
+          type: string
+        ttl:
+          type: integer
+        student:
+          $ref: '#/components/schemas/User'
+        ephemeralCode:
+          type: string
+          nullable: true
+    VerifyRequest:
+      type: object
+      properties:
+        token:
+          type: string
+        gate:
+          type: string
+        direction:
+          type: string
+          enum: [in, out]
+          default: in
+    VerifyResponseValid:
+      type: object
+      properties:
+        valid:
+          type: boolean
+          enum: [true]
+        kid:
+          type: string
+        student:
+          $ref: '#/components/schemas/User'
+    VerifyResponseInvalid:
+      type: object
+      properties:
+        valid:
+          type: boolean
+          enum: [false]
+        reason:
+          type: string
+          enum: [missing_token, missing_jti, expired_or_unknown, replayed, invalid_token]
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        teacherCode:
+          type: string
+        startedAt:
+          type: integer
+          description: Epoch segundos
+        expiresAt:
+          type: integer
+          nullable: true
+    StartSessionRequest:
+      type: object
+      properties:
+        ttlSeconds:
+          type: integer
+          minimum: 60
+          maximum: 3600
+          default: 600
+        offeringId:
+          type: string
+          format: uuid
+          nullable: true
+    StartSessionResponse:
+      type: object
+      properties:
+        session:
+          $ref: '#/components/schemas/Session'
+        qrText:
+          type: string
+        ttl:
+          type: integer
+    AttendanceEntry:
+      type: object
+      properties:
+        code:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        at:
+          type: integer
+          description: Epoch segundos
+        status:
+          type: string
+          nullable: true
+    CheckInRequest:
+      type: object
+      properties:
+        sessionToken:
+          type: string
+      required: [sessionToken]
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+  /.well-known/jwks.json:
+    get:
+      tags: [System]
+      summary: JWKS pÃºblico para validar QR EdDSA
+      responses:
+        '200':
+          description: Conjunto de claves pÃºblicas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+  /__debug:
+    get:
+      tags: [System]
+      summary: DiagnÃ³sticos (protegido por `x-debug-key`)
+      parameters:
+        - in: header
+          name: x-debug-key
+          schema:
+            type: string
+        - in: query
+          name: k
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Estado
+  /auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Iniciar sesiÃ³n (email o code + password)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: SesiÃ³n creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400': { description: Solicitud invÃ¡lida, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '401': { description: Credenciales invÃ¡lidas, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '403': { description: Dominio no permitido, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Renovar token de acceso usando refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Token renovado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '401': { description: Refresh invÃ¡lido }
+  /auth/register:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Registrar nuevo usuario (por defecto student)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: Registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400': { description: Faltan campos }
+        '409': { description: Usuario ya existe }
+  /users/me/photo-url:
+    get:
+      tags: [Users]
+      summary: Obtener URL firmada temporal para la foto
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: URL firmada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhotoUrlResponse'
+        '401': { description: No autenticado }
+  /users/me/photo:
+    put:
+      tags: [Users]
+      summary: Reemplazar la foto del usuario (Data URL)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhotoUpdateRequest'
+      responses:
+        '200': { description: Foto actualizada, content: { application/json: { schema: { $ref: '#/components/schemas/PhotoUrlResponse' } } } }
+        '400': { description: Foto invÃ¡lida }
+        '401': { description: No autenticado }
+    delete:
+      tags: [Users]
+      summary: Eliminar la foto del usuario
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Resultado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  deleted: { type: boolean }
+        '401': { description: No autenticado }
+  /issue-ephemeral:
+    post:
+      tags: [QR]
+      summary: Emitir token/QR efÃ­mero (solo student)
+      description: Requiere rol student en el JWT
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IssueEphemeralRequest' }
+      responses:
+        '200': { description: Token emitido, content: { application/json: { schema: { $ref: '#/components/schemas/IssueEphemeralResponse' } } } }
+        '401': { description: No autenticado o rol incorrecto }
+  /verify:
+    post:
+      tags: [Verify]
+      summary: Verificar QR efÃ­mero
+      description: |
+        Acepta token en el cuerpo (`token`) o como query `t`.
+        Opcionalmente, incluir `Authorization: Bearer ...` de un porter para atribuir el evento.
+      parameters:
+        - in: query
+          name: t
+          required: false
+          schema: { type: string }
+        - in: query
+          name: gate
+          required: false
+          schema: { type: string }
+        - in: query
+          name: direction
+          required: false
+          schema: { type: string, enum: [in, out] }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyRequest' }
+      responses:
+        '200':
+          description: Resultado de verificaciÃ³n
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/VerifyResponseValid'
+                  - $ref: '#/components/schemas/VerifyResponseInvalid'
+        '401': { description: Token invÃ¡lido }
+  /prof/start-session:
+    post:
+      tags: [Professor]
+      summary: Iniciar sesiÃ³n de clase (solo teacher)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartSessionRequest' }
+      responses:
+        '200': { description: SesiÃ³n iniciada, content: { application/json: { schema: { $ref: '#/components/schemas/StartSessionResponse' } } } }
+        '401': { description: No autenticado o rol incorrecto }
+  /prof/end-session:
+    post:
+      tags: [Professor]
+      summary: Finalizar sesiÃ³n (solo teacher)
+      description: Acepta `sessionId` en el cuerpo o `id` por query.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId:
+                  type: string
+      parameters:
+        - in: query
+          name: id
+          schema: { type: string }
+      responses:
+        '200':
+          description: SesiÃ³n cerrada y lista de asistentes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  session: { $ref: '#/components/schemas/Session' }
+                  attendees:
+                    type: array
+                    items: { $ref: '#/components/schemas/AttendanceEntry' }
+        '401': { description: No autenticado }
+        '404': { description: SesiÃ³n no encontrada }
+  /attendance/check-in:
+    post:
+      tags: [Professor]
+      summary: Check-in del alumno (solo student)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckInRequest' }
+      responses:
+        '200':
+          description: Check-in registrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  sessionId: { type: string }
+                  entry: { $ref: '#/components/schemas/AttendanceEntry' }
+        '400': { description: Token de sesiÃ³n invÃ¡lido o expirado }
+        '401': { description: No autenticado }
+        '404': { description: SesiÃ³n no encontrada }
+  /prof/session/{id}:
+    get:
+      tags: [Professor]
+      summary: Obtener sesiÃ³n y asistentes (solo teacher)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Datos de la sesiÃ³n
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session: { $ref: '#/components/schemas/Session' }
+                  attendees:
+                    type: array
+                    items: { $ref: '#/components/schemas/AttendanceEntry' }
+        '401': { description: No autenticado }
+        '404': { description: SesiÃ³n no encontrada }
+  /prof/attendance/add:
+    post:
+      tags: [Professor]
+      summary: AÃ±adir asistencia manual (solo teacher)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId: { type: string }
+                code: { type: string }
+                email: { type: string, format: email }
+      responses:
+        '200':
+          description: Asistencia aÃ±adida
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  entry: { $ref: '#/components/schemas/AttendanceEntry' }
+        '400': { description: ParÃ¡metros faltantes }
+        '401': { description: No autenticado }
+        '404': { description: SesiÃ³n o estudiante no encontrado }
+  /prof/attendance:
+    delete:
+      tags: [Professor]
+      summary: Eliminar asistencia (solo teacher)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sessionId: { type: string }
+                studentCode: { type: string }
+      responses:
+        '200':
+          description: Eliminado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '400': { description: ParÃ¡metros faltantes }
+        '401': { description: No autenticado }
+        '404': { description: SesiÃ³n no encontrada }
+  /prof/students/search:
+    get:
+      tags: [Professor]
+      summary: Buscar estudiantes por email/nombre/cÃ³digo (solo teacher)
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+      responses:
+        '200':
+          description: Resultados
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code: { type: string }
+                        email: { type: string, format: email }
+                        name: { type: string }
+

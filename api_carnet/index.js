@@ -95,7 +95,13 @@ try {
   swaggerDoc = YAML.load(specPath);
   // Tip: si Helmet CSP causara problemas con Swagger UI, se puede desactivar CSP solo para /docs
   // app.use('/docs', helmet({ contentSecurityPolicy: false }));
-  app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDoc, { explorer: true }));
+  app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDoc, {
+    explorer: true,
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayOperationId: true,
+    },
+  }));
   app.get('/openapi.yaml', (req, res) => {
     res.type('text/yaml').send(fs.readFileSync(specPath, 'utf8'));
   });
