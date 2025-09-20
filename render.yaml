@@ -4,7 +4,7 @@ services:
     env: node
     plan: free
     rootDir: api_carnet
-    buildCommand: npm install
+    buildCommand: npm ci --omit=dev
     startCommand: npm start
     autoDeploy: true
     healthCheckPath: /health
@@ -20,6 +20,14 @@ services:
         value: ""
       - key: AVATAR_BUCKET
         value: avatars
+      - key: NODE_ENV
+        value: production
+      - key: NPM_CONFIG_AUDIT
+        value: "false"
+      - key: NPM_CONFIG_FUND
+        value: "false"
+      - key: NPM_CONFIG_LOGLEVEL
+        value: error
       # Optional: restrict who can register/login by email domain
       # - key: ALLOWED_EMAIL_DOMAINS
       #   value: example.edu
