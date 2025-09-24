@@ -108,6 +108,56 @@ flutter run
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000   # Emulador Android
 ```
 
+### iOS (iPhone)
+
+Requisitos y notas:
+
+- Necesitas macOS con Xcode instalado (no se puede compilar iOS desde Windows/Linux).
+- CocoaPods se instala automáticamente con Xcode; Flutter generará los Pods al compilar/ejecutar.
+- El mínimo de iOS objetivo es 13.0 (configurado por Flutter).
+
+Pasos básicos:
+
+```bash
+# En macOS
+flutter pub get
+
+# Simulador iOS (abre uno desde Xcode o usa "open -a Simulator")
+flutter run -d ios
+
+# O compila el proyecto iOS y ábrelo en Xcode para firmar/publicar
+flutter build ios
+open ios/Runner.xcworkspace
+```
+
+Permisos ya configurados en `ios/Runner/Info.plist`:
+
+- `NSCameraUsageDescription`: requerido por el escáner de QR/cámara.
+- `NSPhotoLibraryUsageDescription`: requerido para seleccionar foto desde galería.
+- `NSPhotoLibraryAddUsageDescription`: por si decides guardar/exportar imágenes desde la app.
+
+Backend local en iOS:
+
+- Simulador iOS puede acceder a tu máquina host vía `http://localhost:3000`.
+- Dispositivo físico necesita tu IP de LAN, por ejemplo: `http://192.168.1.50:3000`.
+- Ejemplos:
+  - Simulador: `flutter run --dart-define=API_BASE_URL=http://localhost:3000`
+  - Dispositivo: `flutter run --dart-define=API_BASE_URL=http://<TU-IP-LAN>:3000`
+
+App Transport Security (ATS):
+
+- La API por defecto usa HTTPS, así que no necesitas cambios.
+- Si usas HTTP en desarrollo, añade una excepción ATS SOLO para desarrollo en `ios/Runner/Info.plist`:
+
+```xml
+<key>NSAppTransportSecurity</key>
+<dict>
+  <key>NSAllowsArbitraryLoads</key><true/>
+</dict>
+```
+
+Recomendado: en lugar de permitir todo, crea una excepción por dominio si tu backend HTTP está en una IP o host concreto.
+
 Optimizaciones implementadas:
 
 - El carnet obtiene una URL firmada del avatar directamente en `POST /issue-ephemeral` y la cachea con su expiración para no re‑pedirla hasta que venza.

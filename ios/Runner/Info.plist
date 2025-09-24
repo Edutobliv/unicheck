@@ -47,5 +47,9 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Se necesita acceso a la cámara para escanear códigos QR.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Se necesita acceso a la galería para seleccionar una foto de perfil.</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>Se necesita permiso para guardar imágenes si decides exportar o guardar fotos desde la app.</string>
 </dict>
 </plist>
