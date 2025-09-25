@@ -49,4 +49,59 @@ post_install do |installer|
       end
     end
   end
+
+  # Post-patch: fix known plugin issues after pods integration
+  begin
+    # 1) url_launcher_ios: avoid deprecated keyWindow on iOS 13+
+    url_launcher_file = File.join(__dir__, '.symlinks', 'plugins', 'url_launcher_ios', 'ios', 'url_launcher_ios', 'Sources', 'url_launcher_ios', 'URLLauncherPlugin.swift')
+    if File.exist?(url_launcher_file)
+      content = File.read(url_launcher_file)
+      deprecated_snippet = 'UIApplication.shared.keyWindow?.rootViewController?.topViewController'
+      replacement_snippet = <<~SWIFT.strip
+        {
+          let rootViewController: UIViewController?
+          if #available(iOS 13.0, *) {
+            rootViewController = UIApplication.shared
+              .connectedScenes
+              .compactMap { $0 as? UIWindowScene }
+              .flatMap { $0.windows }
+              .first(where: { $0.isKeyWindow })?
+              .rootViewController
+          } else {
+            rootViewController = UIApplication.shared.windows.first?.rootViewController
+          }
+          return rootViewController?.topViewController
+        }()
+      SWIFT
+      if content.include?(deprecated_snippet)
+        content.gsub!(deprecated_snippet, replacement_snippet)
+        File.write(url_launcher_file, content)
+        puts "[post_install] Patched URLLauncherPlugin.swift to remove keyWindow usage"
+      end
+    end
+
+    # 2) mobile_scanner umbrella: ensure CoreVideo is imported for CVPixelBuffer types
+    umbrella = File.join(__dir__, 'Pods', 'Target Support Files', 'mobile_scanner', 'mobile_scanner-umbrella.h')
+    if File.exist?(umbrella)
+      u = File.read(umbrella)
+      unless u.include?('#import <CoreVideo/CoreVideo.h>')
+        u.sub!("#import <UIKit/UIKit.h>", "#import <UIKit/UIKit.h>\n#import <CoreVideo/CoreVideo.h>")
+        File.write(umbrella, u)
+        puts "[post_install] Added CoreVideo import to mobile_scanner-umbrella.h"
+      end
+    end
+
+    # 3) GoogleToolboxForMac: ensure prototype in macro-generated constructor
+    gtm_header = File.join(__dir__, 'Pods', 'GoogleToolboxForMac', 'DebugUtils', 'GTMMethodCheck.h')
+    if File.exist?(gtm_header)
+      h = File.read(gtm_header)
+      patched = h.gsub(/static void (xxGTMMethodCheckMethod\s*##\s*class\s*##\s*line) \(\)/, 'static void \1 (void)')
+      if patched != h
+        File.write(gtm_header, patched)
+        puts "[post_install] Patched GTMMethodCheck.h constructor signature"
+      end
+    end
+  rescue => e
+    puts "[post_install] Non-fatal patch step failed: #{e}"
+  end
 end
