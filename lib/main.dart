@@ -21,16 +21,21 @@ import "package:supabase_flutter/supabase_flutter.dart";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Initialize Supabase (used for email OTP verification on registration)
+  // Start UI immediately to avoid white screen if network init hangs on iOS
+  runApp(const App());
+  // Initialize Supabase in background with a short timeout
+  unawaited(_initSupabase());
+}
+
+Future<void> _initSupabase() async {
   try {
     await Supabase.initialize(
       url: SupabaseConfig.url,
       anonKey: SupabaseConfig.anonKey,
-    );
+    ).timeout(const Duration(seconds: 4));
   } catch (_) {
-    // If not configured, app still runs and falls back to backend-only flows.
+    // Non‑blocking: app can operate with backend-only flows
   }
-  runApp(const App());
 }
 
 class App extends StatelessWidget {
