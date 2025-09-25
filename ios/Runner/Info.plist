@@ -58,6 +58,9 @@
   <key>NSBonjourServices</key>
   <array>
     <string>_dartobservatory._tcp</string>
+    <string>_dartVmService._tcp</string>
+    <string>_flutterHost._tcp</string>
+    <string>_flutter-tester._tcp</string>
   </array>
   <key>NSLocalNetworkUsageDescription</key>
   <string>Permite descubrir el servicio de depuración en la red local durante desarrollo.</string>

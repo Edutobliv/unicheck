@@ -28,7 +28,8 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 flutter_ios_podfile_setup
 
 target 'Runner' do
-  use_frameworks!
+  # Prefer static linkage to avoid dynamic framework issues with some plugins
+  use_frameworks! :linkage => :static
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
@@ -39,5 +40,13 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+
+    target.build_configurations.each do |config|
+      # Ensure iOS 13.0 min target for all pods
+      deployment_target = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
+      if deployment_target.nil? || Gem::Version.new(deployment_target) < Gem::Version.new('13.0')
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      end
+    end
   end
 end
