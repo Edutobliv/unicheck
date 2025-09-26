@@ -28,6 +28,14 @@ class _PorterPageState extends State<PorterPage> {
   int _secondsLeft = 0;
   int _initialSeconds = 0;
 
+  static final RegExp _jwtPattern = RegExp(
+    r'^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$',
+  );
+  static final RegExp _urlTokenPattern = RegExp(
+    r'[?&](?:t|token)=([^&]+)',
+    caseSensitive: false,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -64,23 +72,64 @@ class _PorterPageState extends State<PorterPage> {
   }
 
   String _extractToken(String raw) {
-    // Accept URL like http://host/verify?t=XXX, or plain JWT
-    try {
-      if (raw.startsWith('http://') || raw.startsWith('https://')) {
-        final uri = Uri.parse(raw);
-        final t = uri.queryParameters['t'] ?? uri.queryParameters['token'];
-        if (t != null && t.isNotEmpty) return t;
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return trimmed;
+
+    final fromUrl = _tokenFromUrl(trimmed);
+    if (fromUrl != null && fromUrl.isNotEmpty) {
+      if (fromUrl.startsWith('http://') || fromUrl.startsWith('https://')) {
+        final nested = _tokenFromUrl(fromUrl);
+        if (nested != null && nested.isNotEmpty) return nested;
       }
+      if (_jwtPattern.hasMatch(fromUrl)) return fromUrl;
+      return fromUrl;
+    }
+
+    final labelled = RegExp(
+      r'^(?:token|code)[:=]\s*(.+)$',
+      caseSensitive: false,
+    ).firstMatch(trimmed);
+    if (labelled != null) {
+      final value = labelled.group(1)!.trim();
+      if (value.isNotEmpty) {
+        if (_jwtPattern.hasMatch(value)) return value;
+        final nested = _tokenFromUrl(value);
+        if (nested != null && nested.isNotEmpty) return nested;
+        return value;
+      }
+    }
+
+    final jwtMatch = _jwtPattern.firstMatch(trimmed);
+    if (jwtMatch != null) return jwtMatch.group(0)!;
+
+    final fallback = _urlTokenPattern.firstMatch(trimmed);
+    if (fallback != null) {
+      final value = Uri.decodeComponent(fallback.group(1)!).trim();
+      if (value.isNotEmpty) return value;
+    }
+
+    return trimmed;
+  }
+
+  String? _tokenFromUrl(String text) {
+    if (!text.startsWith('http://') && !text.startsWith('https://')) {
+      return null;
+    }
+    String? candidate;
+    try {
+      final uri = Uri.parse(text);
+      candidate = uri.queryParameters['t'] ?? uri.queryParameters['token'];
     } catch (_) {}
-    // Fallback: return raw as token
-    return raw;
+    candidate ??= _urlTokenPattern.firstMatch(text)?.group(1);
+    if (candidate == null) return null;
+    final value = Uri.decodeComponent(candidate).trim();
+    return value.isEmpty ? null : value;
   }
 
   void _setupCountdownFromToken(String token) {
     try {
       final parts = token.split('.');
       if (parts.length < 2) return;
-      final payloadJson = utf8.decode(base64Url.normalize(parts[1]).codeUnits);
       final payloadMap =
           jsonDecode(
                 utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
@@ -163,10 +212,11 @@ class _PorterPageState extends State<PorterPage> {
         _result = {'valid': false, 'reason': 'network_error'};
       });
     } finally {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _verifying = false;
         });
+      }
     }
   }
 
@@ -185,9 +235,7 @@ class _PorterPageState extends State<PorterPage> {
     // En web, mostrar mensaje y no intentar usar cámara
     if (kIsWeb) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('Panel del Portero'),
-        ),
+        appBar: AppBar(title: const Text('Panel del Portero')),
         body: const Center(
           child: Padding(
             padding: EdgeInsets.all(16),
@@ -305,15 +353,13 @@ class _ResultCard extends StatelessWidget {
     final title = ok ? 'Válido' : 'No válido';
     String subtitle;
     if (ok) {
-      subtitle =
-          (student?['name'] ?? '').toString() +
-          ' - ' +
-          (student?['email'] ?? '').toString() +
-          '\nCodigo: ' +
-          (student?['code'] ?? '').toString();
+      final name = (student?['name'] ?? '').toString();
+      final email = (student?['email'] ?? '').toString();
+      final code = (student?['code'] ?? '').toString();
+      subtitle = '$name - $email\nCodigo: $code';
     } else {
-      subtitle =
-          'Motivo: ' + _reasonLabel((result['reason'] ?? 'invalid').toString());
+      final reason = _reasonLabel((result['reason'] ?? 'invalid').toString());
+      subtitle = 'Motivo: $reason';
     }
 
     return Container(

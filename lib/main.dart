@@ -1,4 +1,4 @@
-﻿import "dart:async";
+import "dart:async";
 import "dart:convert";
 import "dart:typed_data";
 import "package:cached_network_image/cached_network_image.dart";
@@ -83,8 +83,6 @@ class _CarnetPageState extends State<CarnetPage> {
 
   // tamaÃ±os (ajustados para parecerse a la maqueta)
   static const double kPaddingTarjeta = 16;
-  static const double kFotoW = 150;
-  static const double kFotoH = 175;
   static const double kQrSize = 190; // QR mÃ¡s grande
 
   @override
@@ -100,10 +98,10 @@ class _CarnetPageState extends State<CarnetPage> {
       final prefs = await SharedPreferences.getInstance();
       final code = prefs.getString('code');
       final cachedPhotoData = code != null
-          ? prefs.getString('photoData:' + code)
+          ? prefs.getString('photoData:$code')
           : null;
       final cachedPhotoUrl = code != null
-          ? prefs.getString('photoUrl:' + code)
+          ? prefs.getString('photoUrl:$code')
           : null;
       setState(() {
         _student = {
@@ -168,8 +166,8 @@ class _CarnetPageState extends State<CarnetPage> {
               expIn > 0) {
             final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
             final expAt = now + expIn;
-            await prefs.setString('photoUrl:' + code, signed);
-            await prefs.setInt('photoUrlExp:' + code, expAt);
+            await prefs.setString('photoUrl:$code', signed);
+            await prefs.setInt('photoUrlExp:$code', expAt);
           } else {
             await _maybeRefreshSignedPhoto(prefs);
           }
@@ -186,14 +184,10 @@ class _CarnetPageState extends State<CarnetPage> {
           await _logout();
           return;
         }
-        _toast(
-          "No se pudo generar el QR (".toString() +
-              resp.statusCode.toString() +
-              ")",
-        );
+        _toast('No se pudo generar el QR (${resp.statusCode}).');
       }
     } catch (e) {
-      _toast("Error de red: " + e.toString());
+      _toast('Error de red: $e');
     }
   }
 
@@ -203,7 +197,7 @@ class _CarnetPageState extends State<CarnetPage> {
       final stu = _student;
       final code = (stu?['code'] as String?) ?? prefs.getString('code');
       if (code == null) return;
-      final existingData = prefs.getString('photoData:' + code);
+      final existingData = prefs.getString('photoData:$code');
       if (existingData != null && existingData.isNotEmpty) {
         setState(() {
           (_student ??= <String, dynamic>{})['photoUrl'] = existingData;
@@ -251,19 +245,19 @@ class _CarnetPageState extends State<CarnetPage> {
         final header = bytes.length >= 12 ? bytes.sublist(0, 12) : bytes;
         final detected =
             mime.lookupMimeType('', headerBytes: header) ?? 'image/jpeg';
-        final dataUrl = 'data:$detected;base64,' + base64Encode(bytes);
-        await prefs.setString('photoData:' + code, dataUrl);
-        await prefs.remove('photoUrl:' + code);
-        await prefs.remove('photoUrlExp:' + code);
+        final dataUrl = 'data:$detected;base64,${base64Encode(bytes)}';
+        await prefs.setString('photoData:$code', dataUrl);
+        await prefs.remove('photoUrl:$code');
+        await prefs.remove('photoUrlExp:$code');
         if (!mounted) return;
         setState(() {
           (_student ??= <String, dynamic>{})['photoUrl'] = dataUrl;
         });
       } else {
-        await prefs.setString('photoUrl:' + code, signedUrl);
+        await prefs.setString('photoUrl:$code', signedUrl);
       }
     } catch (_) {
-      await prefs.setString('photoUrl:' + code, signedUrl);
+      await prefs.setString('photoUrl:$code', signedUrl);
     }
   }
 
@@ -299,7 +293,7 @@ class _CarnetPageState extends State<CarnetPage> {
       final code = prefs.getString('code');
       // Si ya tenemos data URL o ya lo intentamos para este code, salir
       if (code != null) {
-        final cachedData = prefs.getString('photoData:' + code);
+        final cachedData = prefs.getString('photoData:$code');
         if (cachedData != null && cachedData.isNotEmpty) {
           setState(() {
             (_student ??= <String, dynamic>{})['photoUrl'] = cachedData;
@@ -410,7 +404,7 @@ class _CarnetPageState extends State<CarnetPage> {
         return;
       }
 
-      final dataUrl = 'data:$detected;base64,' + base64Encode(bytes);
+      final dataUrl = 'data:$detected;base64,${base64Encode(bytes)}';
       final resp = await http
           .put(
             Uri.parse('$_baseUrl/users/me/photo'),
@@ -424,9 +418,9 @@ class _CarnetPageState extends State<CarnetPage> {
 
       if (resp.statusCode == 200) {
         // cachea inmediatamente la imagen que el usuario subiÃ³
-        await prefs.setString('photoData:' + code, dataUrl);
-        await prefs.remove('photoUrl:' + code);
-        await prefs.remove('photoUrlExp:' + code);
+        await prefs.setString('photoData:$code', dataUrl);
+        await prefs.remove('photoUrl:$code');
+        await prefs.remove('photoUrlExp:$code');
         if (!mounted) return;
         setState(() {
           (_student ??= <String, dynamic>{})['photoUrl'] = dataUrl;
@@ -436,12 +430,10 @@ class _CarnetPageState extends State<CarnetPage> {
         _toast("SesiÃ³n expirada. Ingresa nuevamente.");
         await _logout();
       } else {
-        _toast(
-          'No se pudo subir la foto (".toString() + resp.statusCode.toString() + ").',
-        );
+        _toast('No se pudo subir la foto (${resp.statusCode}).');
       }
     } catch (e) {
-      _toast('Error al subir la foto: ' + e.toString());
+      _toast('Error al subir la foto: $e');
     }
   }
 
@@ -472,9 +464,9 @@ class _CarnetPageState extends State<CarnetPage> {
     final prefs = await SharedPreferences.getInstance();
     final code = prefs.getString('code');
     if (code != null) {
-      await prefs.remove('photoUrl:' + code);
-      await prefs.remove('photoUrlExp:' + code);
-      await prefs.remove('photoData:' + code);
+      await prefs.remove('photoUrl:$code');
+      await prefs.remove('photoUrlExp:$code');
+      await prefs.remove('photoData:$code');
     }
     // Limpieza preventiva de llaves globales antiguas
     await prefs.remove('photoUrl');
@@ -491,9 +483,7 @@ class _CarnetPageState extends State<CarnetPage> {
   Widget build(BuildContext context) {
     if (kIsWeb) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text("Carnet Digital"),
-        ),
+        appBar: AppBar(title: const Text("Carnet Digital")),
         body: const Center(
           child: Padding(
             padding: EdgeInsets.all(16),
@@ -508,10 +498,6 @@ class _CarnetPageState extends State<CarnetPage> {
     final s = _student;
 
     // Calcular el color en tiempo de ejecución (no puede estar en una const)
-    final Color onSurface70 = Theme.of(
-      context,
-    ).colorScheme.onSurface.withOpacity(0.7);
-
     return Scaffold(
       appBar: AppBar(
         title: const Text("Carnet Digital"),
@@ -577,7 +563,7 @@ class _CarnetPageState extends State<CarnetPage> {
                               if (_ephemeralCode != null) ...[
                                 const SizedBox(height: 8),
                                 Text(
-                                  "CÃ³digo: " + _ephemeralCode!,
+                                  'Codigo: ${_ephemeralCode!}',
                                   style: const TextStyle(fontSize: 12),
                                 ),
                               ],
@@ -729,7 +715,7 @@ class _CarnetPageState extends State<CarnetPage> {
                   style: TextStyle(
                     color: Theme.of(
                       context,
-                    ).colorScheme.onSurfaceVariant.withOpacity(0.85),
+                    ).colorScheme.onSurfaceVariant.withValues(alpha: 0.85),
                     fontSize: 13,
                   ),
                 ),
@@ -756,7 +742,9 @@ class _Label extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Calculate color at runtime, can't be const
-    final color = Theme.of(context).colorScheme.onSurface.withOpacity(0.7);
+    final color = Theme.of(
+      context,
+    ).colorScheme.onSurface.withValues(alpha: 0.7);
 
     return Text(
       text,
@@ -869,7 +857,7 @@ class _QrGrande extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
         boxShadow: [
-          BoxShadow(blurRadius: 6, color: Colors.black.withOpacity(0.08)),
+          BoxShadow(blurRadius: 6, color: Colors.black.withValues(alpha: 0.08)),
         ],
       ),
       child: qrUrl == null

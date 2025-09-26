@@ -21,7 +21,6 @@ class _TeacherPageState extends State<TeacherPage> {
   String? _sessionId;
   String? _qrText;
   int? _expiresAt;
-  int? _startedAt;
   List<Map<String, dynamic>> _attendees = [];
   Timer? _pollTimer;
 
@@ -78,16 +77,13 @@ class _TeacherPageState extends State<TeacherPage> {
         final session = (data['session'] as Map).cast<String, dynamic>();
         setState(() {
           _sessionId = session['id'] as String;
-          _startedAt = session['startedAt'] as int?;
           _expiresAt = session['expiresAt'] as int?;
           _qrText = data['qrText'] as String;
           _attendees = [];
         });
         _startPolling();
       } else {
-        _toast(
-          'No se pudo iniciar la sesion (' + resp.statusCode.toString() + ')',
-        );
+        _toast('No se pudo iniciar la sesion (${resp.statusCode})');
       }
     } catch (e) {
       _toast('Error: $e');
@@ -117,7 +113,7 @@ class _TeacherPageState extends State<TeacherPage> {
         _pollTimer?.cancel();
         await _fetchAttendance();
       } else {
-        _toast('No se pudo finalizar (' + resp.statusCode.toString() + ')');
+        _toast('No se pudo finalizar (${resp.statusCode})');
       }
     } catch (e) {
       _toast('Error: $e');
@@ -189,7 +185,7 @@ class _TeacherPageState extends State<TeacherPage> {
           ),
         );
       } else {
-        _toast('No se pudo eliminar (' + resp.statusCode.toString() + ')');
+        _toast('No se pudo eliminar (${resp.statusCode})');
       }
     } catch (e) {
       _toast('Error: $e');
@@ -213,7 +209,7 @@ class _TeacherPageState extends State<TeacherPage> {
       if (resp.statusCode == 200) {
         await _fetchAttendance();
       } else {
-        _toast('No se pudo deshacer (' + resp.statusCode.toString() + ')');
+        _toast('No se pudo deshacer (${resp.statusCode})');
       }
     } catch (e) {
       _toast('Error: $e');
@@ -250,7 +246,7 @@ class _TeacherPageState extends State<TeacherPage> {
       } else if (resp.statusCode == 404) {
         _toast('Estudiante no encontrado');
       } else {
-        _toast('No se pudo anadir (' + resp.statusCode.toString() + ')');
+        _toast('No se pudo anadir (${resp.statusCode})');
       }
     } catch (e) {
       _toast('Error: $e');
@@ -263,7 +259,7 @@ class _TeacherPageState extends State<TeacherPage> {
       if (token == null) return;
       final resp = await http.get(
         Uri.parse(
-          '$_baseUrl/prof/students/search?q=' + Uri.encodeQueryComponent(q),
+          '$_baseUrl/prof/students/search?q=${Uri.encodeQueryComponent(q)}',
         ),
         headers: {'Authorization': 'Bearer $token'},
       );
@@ -293,7 +289,7 @@ class _TeacherPageState extends State<TeacherPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Eliminar asistente'),
-        content: Text('Eliminar a ' + label + ' de la sesion?'),
+        content: Text('Eliminar a $label de la sesion?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -466,7 +462,7 @@ class _TeacherPageState extends State<TeacherPage> {
                         title: Text(
                           s['name']!.isNotEmpty ? s['name']! : s['email']!,
                         ),
-                        subtitle: Text('${s['email']} · ${s['code']}'),
+                        subtitle: Text('${s['email']} - ${s['code']}'),
                         onTap: () {
                           _addController.text = s['email']!;
                           setState(() => _suggestions = []);
@@ -505,8 +501,9 @@ class _TeacherPageState extends State<TeacherPage> {
                             direction: DismissDirection.endToStart,
                             confirmDismiss: (_) async {
                               final ok = await _confirmDelete(label);
-                              if (ok && code.isNotEmpty)
+                              if (ok && code.isNotEmpty) {
                                 await _removeAttendee(code);
+                              }
                               return ok;
                             },
                             background: Container(
@@ -525,15 +522,16 @@ class _TeacherPageState extends State<TeacherPage> {
                                 leading: const Icon(Icons.person),
                                 title: Text(label),
                                 subtitle: Text(
-                                  '${a['email'] ?? ''}${when != null ? ' · ${when.toLocal()}' : ''}',
+                                  '${a['email'] ?? ''}${when != null ? ' - ${when.toLocal()}' : ''}',
                                 ),
                                 trailing: IconButton(
                                   tooltip: 'Eliminar',
                                   icon: const Icon(Icons.delete_outline),
                                   onPressed: () async {
                                     final ok = await _confirmDelete(label);
-                                    if (ok && code.isNotEmpty)
+                                    if (ok && code.isNotEmpty) {
                                       await _removeAttendee(code);
+                                    }
                                   },
                                 ),
                               ),

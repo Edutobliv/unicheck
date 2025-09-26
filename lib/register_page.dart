@@ -69,6 +69,7 @@ class _RegisterPageState extends State<RegisterPage> {
       firstDate: now,
       lastDate: DateTime(now.year + 5),
     );
+    if (!mounted) return;
     if (picked != null) {
       setState(() {
         _expiryDate = picked;
@@ -106,6 +107,7 @@ class _RegisterPageState extends State<RegisterPage> {
         ),
       ),
     );
+    if (!mounted) return;
     if (source == null) return;
     await _pickPhoto(source);
   }
@@ -117,8 +119,10 @@ class _RegisterPageState extends State<RegisterPage> {
       maxHeight: 1600,
       imageQuality: 85,
     );
+    if (!mounted) return;
     if (file == null) return;
     final bytes = await file.readAsBytes();
+    if (!mounted) return;
     if (bytes.length > _maxUploadBytes) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -156,7 +160,7 @@ class _RegisterPageState extends State<RegisterPage> {
     if (eduOrAcCcTld.hasMatch(domain)) return true;
     const List<String> extraAllowed = [];
     for (final d in extraAllowed) {
-      if (domain == d || domain.endsWith('.' + d)) return true;
+      if (domain == d || domain.endsWith('.$d')) return true;
     }
     return false;
   }
@@ -175,8 +179,9 @@ class _RegisterPageState extends State<RegisterPage> {
   String? _validateCode(String? value) {
     final v = (value ?? '').trim();
     if (v.isEmpty) return 'El código es obligatorio';
-    if (!RegExp(r'^\d{4,}$').hasMatch(v))
-      return 'El código debe ser numerico (mí­n. 4 dí­gitos)';
+    if (!RegExp(r'^\d{4,}$').hasMatch(v)) {
+      return 'El codigo debe ser numerico (min. 4 digitos)';
+    }
     return null;
   }
 
@@ -201,13 +206,13 @@ class _RegisterPageState extends State<RegisterPage> {
     return null;
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final form = _formKey.currentState;
     if (form != null && !form.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Corrige los errores antes de continuar. Origen: validación local.',
+            'Corrige los errores antes de continuar. Origen: validacion local.',
           ),
         ),
       );
@@ -233,93 +238,94 @@ class _RegisterPageState extends State<RegisterPage> {
       secondLastName,
     ].where((s) => s.isNotEmpty).join(' ');
 
-    http
-        .post(
-          Uri.parse('${ApiConfig.baseUrl}/auth/register'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'code': _codeController.text.trim(),
-            'email': _emailController.text.trim(),
-            'name': fullName,
-            'firstName': firstName,
-            'middleName': middleName,
-            'lastName': lastName,
-            'secondLastName': secondLastName,
-            'password': _passwordController.text,
-            'program': _selectedProgram,
-            'expiresAt': expiry,
-            'role': 'student',
-            'photo': _photoBytes != null && _photoMime != null
-                ? 'data:${_photoMime!};base64,' + base64Encode(_photoBytes!)
-                : null,
-          }),
-        )
-        .then((resp) {
-          Navigator.of(context).pop();
-          if (resp.statusCode == 200) {
-            final data = jsonDecode(resp.body) as Map<String, dynamic>;
-            final user = (data['user'] as Map?)?.cast<String, dynamic>();
-            showDialog(
-              context: context,
-              builder: (_) => AlertDialog(
-                title: const Text('Registro exitoso'),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_photoBytes != null)
-                      Image.memory(
-                        _photoBytes!,
-                        width: 120,
-                        height: 120,
-                        fit: BoxFit.cover,
-                      ),
-                    if (user != null) ...[
-                      const SizedBox(height: 8),
-                      Text(user['name'] ?? ''),
-                    ],
-                    const SizedBox(height: 12),
-                    Text('Código efí­mero: ${data['ephemeralCode']}'),
-                  ],
-                ),
-              ),
-            );
-            Future.delayed(const Duration(seconds: 2), () {
-              Navigator.of(
-                context,
-              ).pushNamedAndRemoveUntil('/login', (route) => false);
-            });
-          } else {
-            String msg = 'Error al registrar';
-            try {
-              final body = jsonDecode(resp.body) as Map<String, dynamic>;
-              final err = (body['message'] ?? body['error'])?.toString();
-              if (err != null && err.isNotEmpty) {
-                msg = '$err (Origen: backend ${resp.statusCode})';
-              } else {
-                msg = 'Error (Origen: backend ${resp.statusCode})';
-              }
-            } catch (_) {}
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text(msg)));
-          }
-        })
-        .catchError((e) {
-          Navigator.of(context).pop();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error de red (Origen: red): ${e.toString()}'),
+    try {
+      final resp = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/auth/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'code': _codeController.text.trim(),
+          'email': _emailController.text.trim(),
+          'name': fullName,
+          'firstName': firstName,
+          'middleName': middleName,
+          'lastName': lastName,
+          'secondLastName': secondLastName,
+          'password': _passwordController.text,
+          'program': _selectedProgram,
+          'expiresAt': expiry,
+          'role': 'student',
+          'photo': _photoBytes != null && _photoMime != null
+              ? 'data:${_photoMime!};base64,${base64Encode(_photoBytes!)}'
+              : null,
+        }),
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final user = (data['user'] as Map?)?.cast<String, dynamic>();
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Registro exitoso'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_photoBytes != null)
+                  Image.memory(
+                    _photoBytes!,
+                    width: 120,
+                    height: 120,
+                    fit: BoxFit.cover,
+                  ),
+                if (user != null) ...[
+                  const SizedBox(height: 8),
+                  Text(user['name'] ?? ''),
+                ],
+                const SizedBox(height: 12),
+                Text('Codigo efimero: ${data['ephemeralCode']}'),
+              ],
             ),
-          );
+          ),
+        );
+        Future.delayed(const Duration(seconds: 2), () {
+          if (!mounted) return;
+          Navigator.of(
+            context,
+          ).pushNamedAndRemoveUntil('/login', (route) => false);
         });
+      } else {
+        String msg = 'Error al registrar';
+        try {
+          final body = jsonDecode(resp.body) as Map<String, dynamic>;
+          final err = (body['message'] ?? body['error'])?.toString();
+          if (err != null && err.isNotEmpty) {
+            msg = '$err (Origen: backend ${resp.statusCode})';
+          } else {
+            msg = 'Error (Origen: backend ${resp.statusCode})';
+          }
+        } catch (_) {}
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error de red (Origen: red): $e')));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Registro'),
-      ),
+      appBar: AppBar(title: const Text('Registro')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
@@ -381,7 +387,7 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
               const SizedBox(height: 15),
               DropdownButtonFormField<String>(
-                value: _selectedProgram,
+                initialValue: _selectedProgram,
                 decoration: const InputDecoration(labelText: 'Programa'),
                 items: _programOptions
                     .map(
@@ -390,9 +396,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     .toList(),
                 onChanged: (v) => setState(() => _selectedProgram = v),
                 validator: (v) =>
-                    (_selectedProgram == null || _selectedProgram!.isEmpty)
-                    ? 'Selecciona un programa'
-                    : null,
+                    (v == null || v.isEmpty) ? 'Selecciona un programa' : null,
               ),
               const SizedBox(height: 15),
               TextField(
@@ -507,6 +511,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     context,
                     _emailController.text.trim(),
                   );
+                  if (!mounted) return;
                   if (!ok) return;
                   _submit();
                 },

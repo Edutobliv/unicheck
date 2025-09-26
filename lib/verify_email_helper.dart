@@ -8,28 +8,37 @@ const int _kMaxResends = 3; // máximo reenvíos permitidos
 const int _kMaxVerifyAttempts = 3; // máximo intentos de verificación
 
 Future<bool> verifyEmailWithOtp(BuildContext context, String email) async {
+  final messenger = ScaffoldMessenger.of(context);
   if (!SupabaseConfig.isConfigured) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Configura SUPABASE_URL y SUPABASE_ANON_KEY para verificar el correo.')),
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Configura SUPABASE_URL y SUPABASE_ANON_KEY para verificar el correo.',
+        ),
+      ),
     );
     return false;
   }
-  // Envío inicial del OTP
+  // Envio inicial del OTP
   try {
     await Supabase.instance.client.auth.signInWithOtp(email: email);
   } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('No se pudo enviar el código: $e')),
+    if (!context.mounted) return false;
+    messenger.showSnackBar(
+      SnackBar(content: Text('No se pudo enviar el codigo: $e')),
     );
     return false;
   }
+  if (!context.mounted) return false;
 
   final ok = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
     builder: (_) => _OtpDialog(email: email),
   );
-  try { await Supabase.instance.client.auth.signOut(); } catch (_) {}
+  try {
+    await Supabase.instance.client.auth.signOut();
+  } catch (_) {}
   return ok == true;
 }
 
@@ -46,19 +55,22 @@ class _OtpDialogState extends State<_OtpDialog> {
   bool _verifying = false;
   int _resends = 0;
   int _attempts = 0;
-  int _cooldownLeft = _kResendCooldownSec; // empieza cooldown tras el primer envío
+  int _cooldownLeft =
+      _kResendCooldownSec; // empieza cooldown tras el primer envío
   late final Ticker _ticker;
 
   @override
   void initState() {
     super.initState();
     // Ticker simple basado en Timer.periodic
-    _ticker = Ticker(onTick: () {
-      if (!mounted) return;
-      setState(() {
-        if (_cooldownLeft > 0) _cooldownLeft--;
-      });
-    });
+    _ticker = Ticker(
+      onTick: () {
+        if (!mounted) return;
+        setState(() {
+          if (_cooldownLeft > 0) _cooldownLeft--;
+        });
+      },
+    );
     _ticker.start();
   }
 
@@ -71,12 +83,16 @@ class _OtpDialogState extends State<_OtpDialog> {
 
   Future<void> _resend() async {
     if (_resends >= _kMaxResends) {
-      setState(() => _errorText = 'Has alcanzado el máximo de reenvíos. Inténtalo más tarde.');
+      setState(
+        () => _errorText =
+            'Has alcanzado el máximo de reenvíos. Inténtalo más tarde.',
+      );
       return;
     }
     if (_cooldownLeft > 0) return;
     try {
       await Supabase.instance.client.auth.signInWithOtp(email: widget.email);
+      if (!mounted) return;
       setState(() {
         _resends++;
         _cooldownLeft = _kResendCooldownSec;
@@ -94,10 +110,15 @@ class _OtpDialogState extends State<_OtpDialog> {
       return;
     }
     if (_attempts >= _kMaxVerifyAttempts) {
-      setState(() => _errorText = 'Se agotaron los intentos. Inténtalo más tarde.');
+      setState(
+        () => _errorText = 'Se agotaron los intentos. Inténtalo más tarde.',
+      );
       return;
     }
-    setState(() { _verifying = true; _errorText = null; });
+    setState(() {
+      _verifying = true;
+      _errorText = null;
+    });
     try {
       await Supabase.instance.client.auth.verifyOTP(
         email: widget.email,
@@ -110,7 +131,8 @@ class _OtpDialogState extends State<_OtpDialog> {
       setState(() {
         _attempts++;
         _verifying = false;
-        _errorText = 'Código inválido o vencido. Intento $_attempts/$_kMaxVerifyAttempts';
+        _errorText =
+            'Código inválido o vencido. Intento $_attempts/$_kMaxVerifyAttempts';
       });
     }
   }
@@ -145,8 +167,8 @@ class _OtpDialogState extends State<_OtpDialog> {
                 _cooldownLeft > 0
                     ? 'Reenviar en ${_cooldownLeft}s'
                     : _resends >= _kMaxResends
-                        ? 'Reenvíos agotados'
-                        : 'Puedes reenviar',
+                    ? 'Reenvíos agotados'
+                    : 'Puedes reenviar',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               TextButton(
@@ -165,7 +187,11 @@ class _OtpDialogState extends State<_OtpDialog> {
         ElevatedButton(
           onPressed: verifyDisabled ? null : _verify,
           child: _verifying
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Text('Verificar'),
         ),
       ],
@@ -191,5 +217,8 @@ class Ticker {
       onTick();
     }
   }
-  void dispose() { _running = false; }
+
+  void dispose() {
+    _running = false;
+  }
 }
