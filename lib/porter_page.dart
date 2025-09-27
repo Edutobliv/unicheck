@@ -1,10 +1,11 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'api_config.dart';
+import 'ui_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class PorterPage extends StatefulWidget {
@@ -64,7 +65,7 @@ class _PorterPageState extends State<PorterPage> {
     if (code == null) return;
     setState(() {
       _locked = true;
-      _scanning = false; // oculta la cámara para evitar dobles capturas
+      _scanning = false; // oculta la cÃ¡mara para evitar dobles capturas
     });
     final token = _extractToken(code.trim());
     _setupCountdownFromToken(token);
@@ -230,112 +231,183 @@ class _PorterPageState extends State<PorterPage> {
     Navigator.of(context).pushReplacementNamed('/login');
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // En web, mostrar mensaje y no intentar usar cámara
-    if (kIsWeb) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Panel del Portero')),
-        body: const Center(
-          child: Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(
-              'El panel de porterí­a no está disponible en la web.\nPor favor usa el celular vinculado a tu cuenta.',
+
+@override
+Widget build(BuildContext context) {
+  if (kIsWeb) {
+    final theme = Theme.of(context);
+    return BrandScaffold(
+      title: 'Panel del Portero',
+      heroBackground: true,
+      body: Center(
+        child: FrostedPanel(
+          width: 420,
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 36),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.desktop_access_disabled_outlined,
+                size: 48,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(height: BrandSpacing.sm),
+              Text(
+                'Disponible solo en el dispositivo movil asignado.',
+                style: theme.textTheme.titleMedium,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: BrandSpacing.xs),
+              Text(
+                'Usa el telefono autorizado para validar el ingreso con QR en vivo.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  final theme = Theme.of(context);
+  final res = _result;
+
+  return BrandScaffold(
+    title: 'Panel del Portero',
+    heroBackground: true,
+    actions: [
+      IconButton(
+        tooltip: 'Cerrar sesion',
+        onPressed: _logout,
+        icon: const Icon(Icons.logout),
+      ),
+    ],
+    body: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FrostedPanel(
+          padding: const EdgeInsets.fromLTRB(32, 28, 32, 24),
+          borderRadius: BrandRadii.large,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Usuario: ${_porterName ?? ''}',
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: BrandSpacing.xs),
+              Text(
+                'Escanea el QR del carnet para validar el acceso en tiempo real.',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: BrandSpacing.md),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                child: res == null
+                    ? const _PlaceholderMessage(key: ValueKey('placeholder'))
+                    : _ResultCard(
+                        key: ValueKey(res['valid'] == true),
+                        result: res,
+                      ),
+              ),
+              if (_secondsLeft > 0) ...[
+                const SizedBox(height: BrandSpacing.sm),
+                _ExpiryIndicator(secondsLeft: _secondsLeft, initial: _initialSeconds),
+              ],
+              const SizedBox(height: BrandSpacing.md),
+              PrimaryButton(
+                onPressed: _verifying ? null : _reset,
+                expand: false,
+                child: const Text('Escanear otro'),
+              ),
+              if (_verifying) ...[
+                const SizedBox(height: BrandSpacing.sm),
+                Row(
+                  children: const [
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: BrandSpacing.xs),
+                    Text('Verificando...'),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: BrandSpacing.lg),
+        Expanded(
+          child: FrostedPanel(
+            padding: const EdgeInsets.all(16),
+            borderRadius: BrandRadii.large,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(BrandRadii.medium),
+              child: _scanning
+                  ? MobileScanner(
+                      controller: _controller,
+                      onDetect: _onDetect,
+                    )
+                  : Container(
+                      color: Colors.black.withValues(alpha: 0.06),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.pause_circle_outline,
+                            size: 42,
+                            color: theme.colorScheme.primary,
+                          ),
+                          const SizedBox(height: BrandSpacing.sm),
+                          const Text('Camara pausada'),
+                        ],
+                      ),
+                    ),
             ),
           ),
         ),
-      );
-    }
+      ],
+    ),
+  );
+}
+}
 
-    final res = _result;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Panel del Portero'),
-        actions: [
-          IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
-        ],
+class _PlaceholderMessage extends StatelessWidget {
+  const _PlaceholderMessage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(BrandSpacing.md),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(BrandRadii.medium),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Usuario: ${_porterName ?? ''} â€¢ Rol: Portero',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
-            if (res != null) ...[
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                transitionBuilder: (child, anim) => FadeTransition(
-                  opacity: anim,
-                  child: SlideTransition(
-                    position:
-                        Tween<Offset>(
-                          begin: const Offset(0, .05),
-                          end: Offset.zero,
-                        ).animate(
-                          CurvedAnimation(
-                            parent: anim,
-                            curve: Curves.easeOutCubic,
-                          ),
-                        ),
-                    child: child,
-                  ),
-                ),
-                child: _ResultCard(
-                  key: ValueKey(res['valid'] == true),
-                  result: res,
-                ),
-              ),
-              const SizedBox(height: 8),
-              if (_secondsLeft > 0)
-                _ExpiryIndicator(
-                  secondsLeft: _secondsLeft,
-                  initial: _initialSeconds,
-                ),
-              const SizedBox(height: 12),
-              ElevatedButton.icon(
-                onPressed: _verifying ? null : _reset,
-                icon: const Icon(Icons.qr_code_scanner),
-                label: const Text('Escanear otro'),
-              ),
-              const SizedBox(height: 12),
-            ] else ...[
-              const Text('Escanea el QR del estudiante para validar acceso.'),
-              const SizedBox(height: 8),
-            ],
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: _scanning
-                    ? MobileScanner(
-                        controller: _controller,
-                        onDetect: _onDetect,
-                      )
-                    : Container(
-                        color: Colors.black12,
-                        child: const Center(child: Text('Cámara pausada')),
-                      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.qr_code_2_outlined,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: BrandSpacing.sm),
+          Expanded(
+            child: Text(
+              'Apunta la camara al codigo QR para validar el ingreso.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.primary,
               ),
             ),
-            if (_verifying) ...[
-              const SizedBox(height: 12),
-              Row(
-                children: const [
-                  SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  SizedBox(width: 8),
-                  Text('Verificando...'),
-                ],
-              ),
-            ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -347,47 +419,65 @@ class _ResultCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final ok = result['valid'] == true;
     final student = (result['student'] as Map?)?.cast<String, dynamic>();
-    final color = ok ? Colors.green.shade600 : Colors.red.shade700;
-    final title = ok ? 'Válido' : 'No válido';
+    final base = ok ? theme.colorScheme.primary : theme.colorScheme.error;
+    final title = ok ? 'Acceso permitido' : 'Acceso rechazado';
     String subtitle;
     if (ok) {
       final name = (student?['name'] ?? '').toString();
-      final email = (student?['email'] ?? '').toString();
       final code = (student?['code'] ?? '').toString();
-      subtitle = '$name - $email\nCodigo: $code';
+      final email = (student?['email'] ?? '').toString();
+      final parts = <String>[];
+      if (name.isNotEmpty) parts.add(name);
+      if (code.isNotEmpty) parts.add('Codigo $code');
+      if (email.isNotEmpty) parts.add(email);
+      subtitle = parts.join(' · ');
+      if (subtitle.isEmpty) {
+        subtitle = 'Estudiante verificado';
+      }
     } else {
       final reason = _reasonLabel((result['reason'] ?? 'invalid').toString());
       subtitle = 'Motivo: $reason';
     }
 
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        border: Border.all(color: color),
-        borderRadius: BorderRadius.circular(12),
+        color: base.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(BrandRadii.medium),
+        border: Border.all(color: base.withValues(alpha: 0.35)),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(ok ? Icons.check_circle : Icons.cancel, color: color, size: 40),
-          const SizedBox(width: 12),
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: base.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(
+              ok ? Icons.check_rounded : Icons.close_rounded,
+              color: base,
+            ),
+          ),
+          const SizedBox(width: BrandSpacing.sm),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: theme.textTheme.titleMedium?.copyWith(color: base),
                 ),
-                const SizedBox(height: 6),
-                Text(subtitle),
+                const SizedBox(height: BrandSpacing.xs),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodyMedium,
+                ),
               ],
             ),
           ),
@@ -402,11 +492,11 @@ String _reasonLabel(String code) {
     case 'expired_or_unknown':
       return 'QR expirado o desconocido';
     case 'replayed':
-      return 'QR ya utilizado (repetido)';
+      return 'QR ya utilizado';
     case 'missing_token':
     case 'invalid_token':
     case 'missing_jti':
-      return 'QR inválido';
+      return 'QR invalido';
     case 'network_error':
       return 'Error de red';
     default:
@@ -421,30 +511,44 @@ class _ExpiryIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final total = initial <= 0 ? 1 : initial;
-    final value = (secondsLeft / total).clamp(0.0, 1.0);
-    final color = secondsLeft > total * 0.5
-        ? Colors.green
-        : secondsLeft > total * 0.2
-        ? Colors.orange
-        : Colors.red;
-    return Row(
+    final theme = Theme.of(context);
+    final total = initial > 0 ? initial : (secondsLeft > 0 ? secondsLeft : 1);
+    final remaining = secondsLeft.clamp(0, total);
+    final progress = total == 0 ? 0.0 : 1 - (remaining / total);
+    final color = remaining <= total * 0.2
+        ? theme.colorScheme.error
+        : theme.colorScheme.primary;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(
-            value: value,
+        ClipRRect(
+          borderRadius: BorderRadius.circular(BrandRadii.pill),
+          child: LinearProgressIndicator(
+            minHeight: 6,
+            value: progress.clamp(0.0, 1.0),
+            backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
             color: color,
-            strokeWidth: 4,
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(height: BrandSpacing.xs),
         Text(
-          'Tiempo restante: ${secondsLeft}s',
-          style: TextStyle(color: color),
+          'Tiempo restante: $remaining s',
+          style: theme.textTheme.bodySmall?.copyWith(color: color),
         ),
       ],
     );
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

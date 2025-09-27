@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -7,7 +7,7 @@ import 'package:mime/mime.dart' as mime;
 import 'package:http/http.dart' as http;
 
 import 'api_config.dart';
-import 'app_theme.dart';
+import 'ui_kit.dart';
 import 'verify_email_helper.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -19,33 +19,40 @@ class RegisterPage extends StatefulWidget {
 
 class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
-  // Nombres y apellidos (validados)
   final _firstNameController = TextEditingController();
-  final _middleNameController = TextEditingController(); // opcional
+  final _middleNameController = TextEditingController();
   final _lastNameController = TextEditingController();
-  final _secondLastNameController = TextEditingController(); // opcional
+  final _secondLastNameController = TextEditingController();
   final _codeController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  // Programa academico (selección controlada)
+  final _roleController = TextEditingController(text: 'estudiante');
+  final _expiryController = TextEditingController();
+
   static const List<String> _programOptions = <String>[
     'Ingenieria de Sistemas',
     'Ingenieria Civil',
     'Ingenieria Financiera',
-    'Administración Ambiental',
-    'Administración Logística',
-    'Administración Turí­stica y Hotelera',
+    'Administracion Ambiental',
+    'Administracion Logistica',
+    'Administracion Turistica y Hotelera',
     'Contaduria Publica',
   ];
-  String? _selectedProgram;
-  final _roleController = TextEditingController(text: 'estudiante');
-  final _expiryController = TextEditingController();
 
+  String? _selectedProgram;
   DateTime? _expiryDate;
   Uint8List? _photoBytes;
-  String? _photoMime; // image/jpeg | image/png | image/webp
+  String? _photoMime;
 
   final ImagePicker _picker = ImagePicker();
+  bool _submitting = false;
+
+  static const int _maxUploadBytes = 10 * 1024 * 1024; // 10 MB
+  static const Set<String> _allowedMimes = {
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+  };
 
   @override
   void dispose() {
@@ -79,13 +86,6 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
-  static const int _maxUploadBytes = 10 * 1024 * 1024; // 10 MB
-  static const Set<String> _allowedMimes = {
-    'image/jpeg',
-    'image/png',
-    'image/webp',
-  };
-
   Future<void> _selectPhotoSource() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -100,7 +100,7 @@ class _RegisterPageState extends State<RegisterPage> {
             ),
             ListTile(
               leading: const Icon(Icons.photo_library),
-              title: const Text('Elegir de galerí­a'),
+              title: const Text('Elegir de galeria'),
               onTap: () => Navigator.of(context).pop(ImageSource.gallery),
             ),
           ],
@@ -126,21 +126,16 @@ class _RegisterPageState extends State<RegisterPage> {
     if (bytes.length > _maxUploadBytes) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'La imagen supera 10MB. Elige otra o reduce su tamaño.',
-          ),
+          content: Text('La imagen supera 10MB. Elige otra o reduce su tamano.'),
         ),
       );
       return;
     }
-    final header = bytes.length >= 12 ? bytes.sublist(0, 12) : bytes;
-    final detected =
-        mime.lookupMimeType(file.path, headerBytes: header) ??
-        'application/octet-stream';
-    if (!_allowedMimes.contains(detected)) {
+    final detected = mime.lookupMimeType(file.path, headerBytes: bytes.take(12).toList());
+    if (detected == null || !_allowedMimes.contains(detected)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Formato no permitido. Usa JPG, PNG o WebP.'),
+          content: Text('Formato no soportado. Usa JPG, PNG o WebP.'),
         ),
       );
       return;
@@ -151,34 +146,20 @@ class _RegisterPageState extends State<RegisterPage> {
     });
   }
 
-  bool _isEducationalEmail(String email) {
-    final at = email.indexOf('@');
-    if (at <= 0 || at == email.length - 1) return false;
-    final domain = email.substring(at + 1).toLowerCase();
-    if (domain.endsWith('.edu')) return true;
-    final eduOrAcCcTld = RegExp(r"\.(edu|ac)\.[a-z]{2}$");
-    if (eduOrAcCcTld.hasMatch(domain)) return true;
-    const List<String> extraAllowed = [];
-    for (final d in extraAllowed) {
-      if (domain == d || domain.endsWith('.$d')) return true;
-    }
-    return false;
-  }
-
   String? _validateEducationalEmail(String? value) {
     final v = (value ?? '').trim();
     if (v.isEmpty) return 'El correo es obligatorio';
     final basic = RegExp(r'^.+@.+\..+$');
-    if (!basic.hasMatch(v)) return 'Formato de correo inválido';
+    if (!basic.hasMatch(v)) return 'Formato de correo invalido';
     if (!_isEducationalEmail(v)) {
-      return 'Solo se permiten correos educativos (.edu, .edu.xx, .ac.xx)';
+      return 'Solo se permiten correos educativos (.edu o .ac)';
     }
     return null;
   }
 
   String? _validateCode(String? value) {
     final v = (value ?? '').trim();
-    if (v.isEmpty) return 'El código es obligatorio';
+    if (v.isEmpty) return 'El codigo es obligatorio';
     if (!RegExp(r'^\d{4,}$').hasMatch(v)) {
       return 'El codigo debe ser numerico (min. 4 digitos)';
     }
@@ -188,22 +169,27 @@ class _RegisterPageState extends State<RegisterPage> {
   String? _validateFirstName(String? value) {
     final v = (value ?? '').trim();
     if (v.isEmpty) return 'El primer nombre es obligatorio';
-    if (v.length < 2) return 'El primer nombre es muy corto';
+    if (v.length < 2) return 'Ingresa un nombre valido';
     return null;
   }
 
   String? _validateLastName(String? value) {
     final v = (value ?? '').trim();
     if (v.isEmpty) return 'El primer apellido es obligatorio';
-    if (v.length < 2) return 'El primer apellido es muy corto';
+    if (v.length < 2) return 'Ingresa un apellido valido';
     return null;
   }
 
   String? _validatePassword(String? value) {
     final v = (value ?? '').trim();
-    if (v.isEmpty) return 'La contraseña es obligatoria';
-    if (v.length < 8) return 'La contraseña debe tener al menos 8 caracteres';
+    if (v.isEmpty) return 'La contrasena es obligatoria';
+    if (v.length < 8) return 'La contrasena debe tener al menos 8 caracteres';
     return null;
+  }
+
+  bool _isEducationalEmail(String email) {
+    final lowered = email.toLowerCase();
+    return lowered.endsWith('.edu') || lowered.contains('.edu.') || lowered.contains('.ac.');
   }
 
   Future<void> _submit() async {
@@ -211,32 +197,30 @@ class _RegisterPageState extends State<RegisterPage> {
     if (form != null && !form.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Corrige los errores antes de continuar. Origen: validacion local.',
-          ),
+          content: Text('Corrige los errores antes de continuar.'),
         ),
       );
       return;
     }
+
+    final ok = await verifyEmailWithOtp(
+      context,
+      _emailController.text.trim(),
+    );
+    if (!mounted || !ok) return;
+
+    setState(() => _submitting = true);
+
     final expiry = _expiryDate != null
         ? '${_expiryDate!.day.toString().padLeft(2, '0')}/${_expiryDate!.month.toString().padLeft(2, '0')}/${_expiryDate!.year}'
         : null;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-
     final firstName = _firstNameController.text.trim();
     final middleName = _middleNameController.text.trim();
     final lastName = _lastNameController.text.trim();
     final secondLastName = _secondLastNameController.text.trim();
-    final fullName = [
-      firstName,
-      middleName,
-      lastName,
-      secondLastName,
-    ].where((s) => s.isNotEmpty).join(' ');
+    final fullName = [firstName, middleName, lastName, secondLastName]
+        .where((s) => s.isNotEmpty)
+        .join(' ');
 
     try {
       final resp = await http.post(
@@ -261,42 +245,49 @@ class _RegisterPageState extends State<RegisterPage> {
       );
 
       if (!mounted) return;
-      Navigator.of(context).pop();
 
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final user = (data['user'] as Map?)?.cast<String, dynamic>();
-        if (!mounted) return;
-        showDialog(
+        await showDialog<void>(
           context: context,
-          builder: (_) => AlertDialog(
+          builder: (context) => AlertDialog(
             title: const Text('Registro exitoso'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (_photoBytes != null)
-                  Image.memory(
-                    _photoBytes!,
-                    width: 120,
-                    height: 120,
-                    fit: BoxFit.cover,
+                if (_photoBytes != null) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.memory(
+                      _photoBytes!,
+                      height: 120,
+                      fit: BoxFit.cover,
+                    ),
                   ),
-                if (user != null) ...[
-                  const SizedBox(height: 8),
-                  Text(user['name'] ?? ''),
+                  const SizedBox(height: BrandSpacing.sm),
                 ],
-                const SizedBox(height: 12),
+                if (user != null) ...[
+                  Text(
+                    user['name'] ?? '',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: BrandSpacing.xs),
+                ],
                 Text('Codigo efimero: ${data['ephemeralCode']}'),
               ],
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Continuar'),
+              ),
+            ],
           ),
         );
-        Future.delayed(const Duration(seconds: 2), () {
-          if (!mounted) return;
-          Navigator.of(
-            context,
-          ).pushNamedAndRemoveUntil('/login', (route) => false);
-        });
+        if (!mounted) return;
+        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
       } else {
         String msg = 'Error al registrar';
         try {
@@ -308,219 +299,543 @@ class _RegisterPageState extends State<RegisterPage> {
             msg = 'Error (Origen: backend ${resp.statusCode})';
           }
         } catch (_) {}
-        if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(msg)));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       }
     } catch (e) {
       if (!mounted) return;
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error de red (Origen: red): $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error de red (Origen: red): $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Registro')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextFormField(
-                controller: _codeController,
-                decoration: const InputDecoration(
-                  labelText: 'Código (solo números)',
-                ),
-                keyboardType: TextInputType.number,
-                validator: _validateCode,
-              ),
-              const SizedBox(height: 15),
-              TextFormField(
-                controller: _firstNameController,
-                decoration: const InputDecoration(labelText: 'Primer nombre'),
-                validator: _validateFirstName,
-              ),
-              const SizedBox(height: 15),
-              TextFormField(
-                controller: _middleNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Segundo nombre (opcional)',
-                ),
-              ),
-              const SizedBox(height: 15),
-              TextFormField(
-                controller: _lastNameController,
-                decoration: const InputDecoration(labelText: 'Primer apellido'),
-                validator: _validateLastName,
-              ),
-              const SizedBox(height: 15),
-              TextFormField(
-                controller: _secondLastNameController,
-                decoration: const InputDecoration(
-                  labelText: 'Segundo apellido (opcional)',
-                ),
-              ),
-              const SizedBox(height: 15),
-              TextFormField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: 'Correo',
-                  helperText:
-                      'Usa tu correo institucional (.edu, .edu.xx, .ac.xx)',
-                ),
-                validator: _validateEducationalEmail,
-              ),
-              const SizedBox(height: 15),
-              TextFormField(
-                controller: _passwordController,
-                decoration: const InputDecoration(labelText: 'Contraseña'),
-                obscureText: true,
-                validator: _validatePassword,
-              ),
-              const SizedBox(height: 15),
-              DropdownButtonFormField<String>(
-                initialValue: _selectedProgram,
-                decoration: const InputDecoration(labelText: 'Programa'),
-                items: _programOptions
-                    .map(
-                      (p) => DropdownMenuItem<String>(value: p, child: Text(p)),
-                    )
-                    .toList(),
-                onChanged: (v) => setState(() => _selectedProgram = v),
-                validator: (v) =>
-                    (v == null || v.isEmpty) ? 'Selecciona un programa' : null,
-              ),
-              const SizedBox(height: 15),
-              TextField(
-                controller: _roleController,
-                decoration: const InputDecoration(labelText: 'Rol'),
-                readOnly: true,
-              ),
-              const SizedBox(height: 15),
-              GestureDetector(
-                onTap: _pickExpiryDate,
-                child: AbsorbPointer(
-                  child: TextFormField(
-                    controller: _expiryController,
-                    decoration: const InputDecoration(
-                      labelText: 'Fecha de vencimiento (opcional)',
-                      hintText: 'Fecha de renovación semestral automatica',
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 15),
-              Center(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Text(
-                        'Agrega un foto para el carnet digital (opcional)',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.onSurface,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: _selectPhotoSource,
-                      child: Builder(
-                        builder: (context) {
-                          final theme = Theme.of(context);
-                          final isDark = theme.brightness == Brightness.dark;
-                          final bg = isDark
-                              ? Colors.white.withValues(alpha: 0.06)
-                              : BrandColors.mist;
-                          final border = isDark
-                              ? theme.colorScheme.outlineVariant.withValues(
-                                  alpha: 0.5,
-                                )
-                              : theme.colorScheme.outlineVariant;
-                          final fg = isDark
-                              ? theme.colorScheme.onInverseSurface
-                              : theme.colorScheme.onSurface;
-                          return Container(
-                            width: 150,
-                            height: 150,
-                            decoration: BoxDecoration(
-                              border: Border.all(color: border),
-                              borderRadius: BorderRadius.circular(12),
-                              color: bg,
-                            ),
-                            child: _photoBytes == null
-                                ? Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.photo_camera,
-                                        size: 42,
-                                        color: fg.withValues(alpha: 0.9),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'JPG/PNG/WebP · Máx 10MB',
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                              fontSize: 12,
-                                              color: fg.withValues(alpha: 0.8),
-                                            ),
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ],
-                                  )
-                                : ClipRRect(
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: Image.memory(
-                                      _photoBytes!,
-                                      fit: BoxFit.cover,
-                                    ),
-                                  ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () async {
-                  final form = _formKey.currentState;
-                  if (form != null && !form.validate()) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Corrige los errores antes de continuar.',
-                        ),
-                      ),
-                    );
-                    return;
-                  }
-                  final ok = await verifyEmailWithOtp(
-                    context,
-                    _emailController.text.trim(),
-                  );
-                  if (!mounted) return;
-                  if (!ok) return;
-                  _submit();
-                },
-                child: const Text('Registrar'),
-              ),
-            ],
-          ),
+    return BrandScaffold(
+      title: 'Crear cuenta',
+      heroBackground: true,
+      padding: EdgeInsets.zero,
+      actions: [
+        TextButton(
+          onPressed: _submitting
+              ? null
+              : () => Navigator.of(context).pushReplacementNamed('/login'),
+          child: const Text('Iniciar sesion'),
         ),
+      ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 1000;
+          final horizontalPadding = isWide ? 72.0 : 24.0;
+          final verticalPadding = isWide ? 48.0 : 24.0;
+          final hero = _RegisterHero(
+            compact: !isWide,
+            onLogin: _submitting
+                ? null
+                : () => Navigator.of(context).pushReplacementNamed('/login'),
+          );
+          final form = _RegisterFormCard(
+            formKey: _formKey,
+            codeController: _codeController,
+            firstNameController: _firstNameController,
+            middleNameController: _middleNameController,
+            lastNameController: _lastNameController,
+            secondLastNameController: _secondLastNameController,
+            emailController: _emailController,
+            passwordController: _passwordController,
+            roleController: _roleController,
+            expiryController: _expiryController,
+            selectedProgram: _selectedProgram,
+            programOptions: _programOptions,
+            onProgramChanged: (value) => setState(() => _selectedProgram = value),
+            onPickExpiry: _pickExpiryDate,
+            photoBytes: _photoBytes,
+            onPickPhoto: _selectPhotoSource,
+            onSubmit: _submit,
+            submitting: _submitting,
+            validators: _FormValidators(
+              code: _validateCode,
+              firstName: _validateFirstName,
+              lastName: _validateLastName,
+              educationalEmail: _validateEducationalEmail,
+              password: _validatePassword,
+            ),
+          );
+
+          if (isWide) {
+            return Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: horizontalPadding,
+                vertical: verticalPadding,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: hero),
+                  const SizedBox(width: BrandSpacing.xl),
+                  Expanded(child: form),
+                ],
+              ),
+            );
+          }
+
+          return SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              verticalPadding,
+              horizontalPadding,
+              BrandSpacing.xl,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                hero,
+                const SizedBox(height: BrandSpacing.xl),
+                form,
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 }
+
+class _FormValidators {
+  const _FormValidators({
+    required this.code,
+    required this.firstName,
+    required this.lastName,
+    required this.educationalEmail,
+    required this.password,
+  });
+
+  final String? Function(String?) code;
+  final String? Function(String?) firstName;
+  final String? Function(String?) lastName;
+  final String? Function(String?) educationalEmail;
+  final String? Function(String?) password;
+}
+
+class _RegisterHero extends StatelessWidget {
+  const _RegisterHero({required this.compact, required this.onLogin});
+
+  final bool compact;
+  final VoidCallback? onLogin;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textAlign = compact ? TextAlign.center : TextAlign.start;
+    return Column(
+      crossAxisAlignment:
+          compact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const InfoBadge(
+          icon: Icons.auto_awesome,
+          label: 'Credencial digital en minutos',
+        ),
+        const SizedBox(height: BrandSpacing.lg),
+        Text(
+          'Registra tu acceso inteligente',
+          style: theme.textTheme.headlineMedium?.copyWith(
+            color: Colors.white,
+            letterSpacing: -0.6,
+            height: 1.05,
+          ),
+          textAlign: textAlign,
+        ),
+        const SizedBox(height: BrandSpacing.sm),
+        Text(
+          'Comparte accesos seguros con tokens efimeros, gestiona fotos y vence en automatico sin planillas.',
+          style: theme.textTheme.bodyLarge?.copyWith(
+            color: Colors.white.withValues(alpha: 0.86),
+          ),
+          textAlign: textAlign,
+        ),
+        const SizedBox(height: BrandSpacing.lg),
+        Wrap(
+          alignment: compact ? WrapAlignment.center : WrapAlignment.start,
+          spacing: BrandSpacing.sm,
+          runSpacing: BrandSpacing.sm,
+          children: const [
+            _HeroChip(icon: Icons.qr_code_2, label: 'QR dinamico seguro'),
+            _HeroChip(icon: Icons.people_alt_outlined, label: 'Para estudiantes y staff'),
+            _HeroChip(icon: Icons.lock_clock, label: 'Tokens con expiracion'),
+          ],
+        ),
+        const SizedBox(height: BrandSpacing.lg),
+        SecondaryButton(
+          onPressed: onLogin,
+          expand: false,
+          child: const Text('Ya tengo cuenta'),
+        ),
+      ],
+    );
+  }
+}
+
+class _RegisterFormCard extends StatelessWidget {
+  const _RegisterFormCard({
+    required this.formKey,
+    required this.codeController,
+    required this.firstNameController,
+    required this.middleNameController,
+    required this.lastNameController,
+    required this.secondLastNameController,
+    required this.emailController,
+    required this.passwordController,
+    required this.roleController,
+    required this.expiryController,
+    required this.selectedProgram,
+    required this.programOptions,
+    required this.onProgramChanged,
+    required this.onPickExpiry,
+    required this.photoBytes,
+    required this.onPickPhoto,
+    required this.onSubmit,
+    required this.submitting,
+    required this.validators,
+  });
+
+  final GlobalKey<FormState> formKey;
+  final TextEditingController codeController;
+  final TextEditingController firstNameController;
+  final TextEditingController middleNameController;
+  final TextEditingController lastNameController;
+  final TextEditingController secondLastNameController;
+  final TextEditingController emailController;
+  final TextEditingController passwordController;
+  final TextEditingController roleController;
+  final TextEditingController expiryController;
+  final String? selectedProgram;
+  final List<String> programOptions;
+  final ValueChanged<String?> onProgramChanged;
+  final VoidCallback onPickExpiry;
+  final Uint8List? photoBytes;
+  final VoidCallback onPickPhoto;
+  final VoidCallback onSubmit;
+  final bool submitting;
+  final _FormValidators validators;
+
+  @override
+  Widget build(BuildContext context) {
+    return FrostedPanel(
+      padding: const EdgeInsets.fromLTRB(32, 32, 32, 28),
+      borderRadius: BrandRadii.large,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final twoColumns = constraints.maxWidth > 520;
+          final fieldWidth = twoColumns
+              ? (constraints.maxWidth - BrandSpacing.sm) / 2
+              : constraints.maxWidth;
+
+          Widget wrapField(Widget field) => SizedBox(
+                width: fieldWidth,
+                child: field,
+              );
+
+          return Form(
+            key: formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SectionHeader(
+                  title: 'Datos personales',
+                  caption: 'Usaremos esta informacion para generar tu credencial digital.',
+                ),
+                const SizedBox(height: BrandSpacing.md),
+                Wrap(
+                  spacing: BrandSpacing.sm,
+                  runSpacing: BrandSpacing.sm,
+                  children: [
+                    wrapField(
+                      TextFormField(
+                        controller: codeController,
+                        decoration: const InputDecoration(
+                          labelText: 'Codigo (solo numeros)',
+                          prefixIcon: Icon(Icons.badge_outlined),
+                        ),
+                        keyboardType: TextInputType.number,
+                        validator: validators.code,
+                      ),
+                    ),
+                    wrapField(
+                      TextFormField(
+                        controller: firstNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Primer nombre',
+                          prefixIcon: Icon(Icons.person_outline),
+                        ),
+                        validator: validators.firstName,
+                      ),
+                    ),
+                    wrapField(
+                      TextFormField(
+                        controller: middleNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Segundo nombre (opcional)',
+                          prefixIcon: Icon(Icons.person_add_alt_1_outlined),
+                        ),
+                      ),
+                    ),
+                    wrapField(
+                      TextFormField(
+                        controller: lastNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Primer apellido',
+                          prefixIcon: Icon(Icons.person_outline),
+                        ),
+                        validator: validators.lastName,
+                      ),
+                    ),
+                    wrapField(
+                      TextFormField(
+                        controller: secondLastNameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Segundo apellido (opcional)',
+                          prefixIcon: Icon(Icons.person_outline),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: BrandSpacing.lg),
+                const SectionHeader(
+                  title: 'Contacto y acceso',
+                  caption: 'Confirma tu correo institucional y una contrasena segura.',
+                ),
+                const SizedBox(height: BrandSpacing.md),
+                Wrap(
+                  spacing: BrandSpacing.sm,
+                  runSpacing: BrandSpacing.sm,
+                  children: [
+                    wrapField(
+                      TextFormField(
+                        controller: emailController,
+                        decoration: const InputDecoration(
+                          labelText: 'Correo institucional',
+                          prefixIcon: Icon(Icons.mail_outline),
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                        validator: validators.educationalEmail,
+                      ),
+                    ),
+                    wrapField(
+                      TextFormField(
+                        controller: passwordController,
+                        decoration: const InputDecoration(
+                          labelText: 'Contrasena',
+                          prefixIcon: Icon(Icons.lock_outline),
+                        ),
+                        obscureText: true,
+                        validator: validators.password,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: BrandSpacing.lg),
+                const SectionHeader(
+                  title: 'Programa y vigencia',
+                  caption: 'Define el programa academico y opcionalmente una fecha de expiracion.',
+                ),
+                const SizedBox(height: BrandSpacing.md),
+                Wrap(
+                  spacing: BrandSpacing.sm,
+                  runSpacing: BrandSpacing.sm,
+                  children: [
+                    wrapField(
+                      DropdownButtonFormField<String>(
+                      initialValue: selectedProgram,
+                        decoration: const InputDecoration(
+                          labelText: 'Programa academico',
+                          prefixIcon: Icon(Icons.school_outlined),
+                        ),
+                        isExpanded: true,
+                        items: programOptions
+                            .map(
+                              (option) => DropdownMenuItem<String>(
+                                value: option,
+                                child: Text(option),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: onProgramChanged,
+                      ),
+                    ),
+                    wrapField(
+                      TextFormField(
+                        controller: roleController,
+                        readOnly: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Rol asignado',
+                          prefixIcon: Icon(Icons.verified_user_outlined),
+                        ),
+                      ),
+                    ),
+                    wrapField(
+                      GestureDetector(
+                        onTap: onPickExpiry,
+                        child: AbsorbPointer(
+                          child: TextFormField(
+                            controller: expiryController,
+                            decoration: const InputDecoration(
+                              labelText: 'Fecha de vencimiento (opcional)',
+                              prefixIcon: Icon(Icons.event_outlined),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: BrandSpacing.lg),
+                const SectionHeader(
+                  title: 'Foto de perfil (opcional)',
+                  caption: 'Puedes cargar una foto ahora o actualizarla luego desde la app.',
+                ),
+                const SizedBox(height: BrandSpacing.md),
+                _PhotoPickerTile(
+                  photoBytes: photoBytes,
+                  onPickPhoto: onPickPhoto,
+                ),
+                const SizedBox(height: BrandSpacing.lg),
+                PrimaryButton(
+                  onPressed: submitting ? null : onSubmit,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: submitting
+                        ? const SizedBox(
+                            key: ValueKey('loading'),
+                            height: 22,
+                            width: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2.4),
+                          )
+                        : const Text('Registrar cuenta'),
+                  ),
+                ),
+                const SizedBox(height: BrandSpacing.sm),
+                TextButton(
+                  onPressed: submitting
+                      ? null
+                      : () => Navigator.of(context).pushReplacementNamed('/login'),
+                  child: const Text('Volver al inicio de sesion'),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _PhotoPickerTile extends StatelessWidget {
+  const _PhotoPickerTile({required this.photoBytes, required this.onPickPhoto});
+
+  final Uint8List? photoBytes;
+  final VoidCallback onPickPhoto;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GestureDetector(
+      onTap: onPickPhoto,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: BrandGradients.surface,
+          borderRadius: BorderRadius.circular(BrandRadii.large),
+          border: Border.all(
+            color: theme.colorScheme.outline.withValues(alpha: 0.4),
+          ),
+        ),
+        child: photoBytes == null
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.primary.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.photo_camera_back_outlined,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: BrandSpacing.sm),
+                  Text(
+                    'Subir foto (JPG/PNG/WebP)',
+                    style: theme.textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: BrandSpacing.xs),
+                  Text(
+                    'Tamano maximo 10MB. Recomendado fondo neutro.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              )
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(BrandRadii.medium),
+                child: AspectRatio(
+                  aspectRatio: 3 / 4,
+                  child: Image.memory(
+                    photoBytes!,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _HeroChip extends StatelessWidget {
+  const _HeroChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(BrandRadii.pill),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: Colors.white),
+          const SizedBox(width: BrandSpacing.xs),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+
+
+

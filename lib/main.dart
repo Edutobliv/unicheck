@@ -1,4 +1,4 @@
-import "dart:async";
+﻿import "dart:async";
 import "dart:convert";
 import "dart:typed_data";
 import "package:cached_network_image/cached_network_image.dart";
@@ -16,6 +16,7 @@ import "porter_page.dart";
 import "app_theme.dart";
 import "api_config.dart";
 import "register_page.dart";
+import "ui_kit.dart";
 import "supabase_config.dart";
 import "package:supabase_flutter/supabase_flutter.dart";
 
@@ -34,7 +35,7 @@ Future<void> _initSupabase() async {
       anonKey: SupabaseConfig.anonKey,
     ).timeout(const Duration(seconds: 4));
   } catch (_) {
-    // Non‑blocking: app can operate with backend-only flows
+    // Nonâ€‘blocking: app can operate with backend-only flows
   }
 }
 
@@ -75,15 +76,9 @@ class _CarnetPageState extends State<CarnetPage> {
   String? _ephemeralCode;
   final ImagePicker _picker = ImagePicker();
   String?
-  _photoEnsuredForCode; // evita solicitar la foto muchas veces por sesiÃ³n
+  _photoEnsuredForCode; // evita solicitar la foto muchas veces por sesiÃƒÂ³n
 
-  // Colores / estilos
-  static const Color rojoMarca = Color(0xFFB0191D);
-  static const Color grisTexto = Color(0xFF424242);
 
-  // tamaÃ±os (ajustados para parecerse a la maqueta)
-  static const double kPaddingTarjeta = 16;
-  static const double kQrSize = 190; // QR mÃ¡s grande
 
   @override
   void initState() {
@@ -143,7 +138,7 @@ class _CarnetPageState extends State<CarnetPage> {
           _student = (data["student"] as Map?)?.cast<String, dynamic>();
           _ephemeralCode = data["ephemeralCode"] as String?;
         });
-        // Completa valores faltantes desde cachÃ© (por ejemplo, nombre)
+        // Completa valores faltantes desde cachÃƒÂ© (por ejemplo, nombre)
         try {
           if (_student != null) {
             final cachedName = prefs.getString('name');
@@ -154,7 +149,7 @@ class _CarnetPageState extends State<CarnetPage> {
           }
         } catch (_) {}
         await _ensurePhotoCacheForCurrentStudent();
-        // Guardado/cachÃ© de foto firmada si viene en la respuesta
+        // Guardado/cachÃƒÂ© de foto firmada si viene en la respuesta
         final stu = _student;
         if (stu != null) {
           final signed = stu['photoUrl'] as String?;
@@ -180,7 +175,7 @@ class _CarnetPageState extends State<CarnetPage> {
             await _fetchQr();
             return;
           }
-          _toast('SesiÃ³n expirada. Por favor ingresa nuevamente.');
+          _toast('SesiÃƒÂ³n expirada. Por favor ingresa nuevamente.');
           await _logout();
           return;
         }
@@ -381,7 +376,7 @@ class _CarnetPageState extends State<CarnetPage> {
       if (file == null) return;
 
       final bytes = await file.readAsBytes();
-      // ValidaciÃ³n ligera (el backend reoptimiza a <=3MB)
+      // ValidaciÃƒÂ³n ligera (el backend reoptimiza a <=3MB)
       if (bytes.length > 20 * 1024 * 1024) {
         _toast('La imagen es muy grande (>20MB).');
         return;
@@ -399,7 +394,7 @@ class _CarnetPageState extends State<CarnetPage> {
       final token = prefs.getString('token');
       final code = prefs.getString('code');
       if (token == null || code == null) {
-        _toast("SesiÃ³n no vÃ¡lida. Ingresa nuevamente.");
+        _toast("SesiÃƒÂ³n no vÃƒÂ¡lida. Ingresa nuevamente.");
         await _logout();
         return;
       }
@@ -417,7 +412,7 @@ class _CarnetPageState extends State<CarnetPage> {
           .timeout(const Duration(seconds: 15));
 
       if (resp.statusCode == 200) {
-        // cachea inmediatamente la imagen que el usuario subiÃ³
+        // cachea inmediatamente la imagen que el usuario subiÃƒÂ³
         await prefs.setString('photoData:$code', dataUrl);
         await prefs.remove('photoUrl:$code');
         await prefs.remove('photoUrlExp:$code');
@@ -427,7 +422,7 @@ class _CarnetPageState extends State<CarnetPage> {
         });
         _toast('Foto actualizada.');
       } else if (resp.statusCode == 401) {
-        _toast("SesiÃ³n expirada. Ingresa nuevamente.");
+        _toast("SesiÃƒÂ³n expirada. Ingresa nuevamente.");
         await _logout();
       } else {
         _toast('No se pudo subir la foto (${resp.statusCode}).');
@@ -479,312 +474,490 @@ class _CarnetPageState extends State<CarnetPage> {
     Navigator.of(context).pushReplacementNamed('/login');
   }
 
+
   @override
   Widget build(BuildContext context) {
     if (kIsWeb) {
-      return Scaffold(
-        appBar: AppBar(title: const Text("Carnet Digital")),
-        body: const Center(
-          child: Padding(
-            padding: EdgeInsets.all(16),
-            child: Text(
-              "El carnet digital estÃ¡ disponible solo en la app mÃ³vil.\nPor favor ingresa desde tu celular vinculado.",
+      final theme = Theme.of(context);
+      return BrandScaffold(
+        title: 'Carnet digital',
+        heroBackground: true,
+        body: Center(
+          child: FrostedPanel(
+            width: 420,
+            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 36),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.devices_other_outlined,
+                  size: 48,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(height: BrandSpacing.sm),
+                Text(
+                  'Disponible solo en dispositivos moviles',
+                  style: theme.textTheme.titleMedium,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: BrandSpacing.xs),
+                Text(
+                  'Ingresa desde la aplicacion instalada en tu telefono autorizado para mostrar tu credencial dinamica.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ),
           ),
         ),
       );
     }
 
-    final s = _student;
+    final student = _student;
 
-    // Calcular el color en tiempo de ejecución (no puede estar en una const)
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Carnet Digital"),
-        actions: [
-          IconButton(
-            tooltip: 'Registrar asistencia (scan)',
-            onPressed: () => Navigator.of(context).pushNamed('/scan-checkin'),
-            icon: const Icon(Icons.qr_code_scanner),
+    return BrandScaffold(
+      title: 'Carnet digital',
+      heroBackground: true,
+      actions: [
+        IconButton(
+          tooltip: 'Escanear asistencia',
+          onPressed: () => Navigator.of(context).pushNamed('/scan-checkin'),
+          icon: const Icon(Icons.qr_code_scanner),
+        ),
+        IconButton(
+          tooltip: 'Cerrar sesion',
+          onPressed: _logout,
+          icon: const Icon(Icons.logout),
+        ),
+      ],
+      body: RefreshIndicator(
+        onRefresh: _fetchQr,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _DigitalIdCard(
+                student: student,
+                qrUrl: _qrUrl,
+                ephemeralCode: _ephemeralCode,
+                secondsLeft: _secondsLeft,
+                onUploadPhoto: _pickAndUploadPhoto,
+              ),
+              const SizedBox(height: BrandSpacing.lg),
+              _QrStatusPanel(
+                secondsLeft: _secondsLeft,
+                onRefresh: _fetchQr,
+              ),
+              const SizedBox(height: BrandSpacing.lg),
+              _AccountInfoPanel(
+                student: student,
+                onUploadPhoto: _pickAndUploadPhoto,
+              ),
+              const SizedBox(height: BrandSpacing.lg),
+            ],
           ),
-          IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // TARJETA
-            Container(
-              padding: const EdgeInsets.all(kPaddingTarjeta),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                boxShadow: const [
-                  BoxShadow(blurRadius: 8, color: Colors.black12),
-                ],
-                border: Border.all(color: const Color(0xFFE9E9E9)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Encabezado con logo + nombre universidad
-                  Center(
-                    child: Image.asset(
-                      "assets/img/logo_piloto.png",
-                      height: 90, // ajusta el tamaÃ±o del logo
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Foto + QR (centrados y proporcionados)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          child: _FotoBox(
-                            photoAssetPath: "assets/img/foto_carnet.png",
-                            photoUrl: s?["photoUrl"],
-                            width: 160,
-                            height: 200,
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _QrGrande(qrUrl: _qrUrl, size: kQrSize),
-                              if (_ephemeralCode != null) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Codigo: ${_ephemeralCode!}',
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-
-                  // NOMBRE
-                  const _Label(" NOMBRE"),
-                  Builder(
-                    builder: (context) {
-                      final name = s?['name']?.toString() ?? '';
-                      return Text(
-                        (name.isNotEmpty
-                                ? name
-                                : "Error\nComunicate con soporte")
-                            .toUpperCase(),
-                        style: const TextStyle(
-                          color: grisTexto,
-                          fontSize: 18,
-                          height: 1.15,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 10),
-
-                  // CÃ“DIGO / VENCE
-                  Row(
-                    children: const [
-                      Expanded(child: _Label("CÃ“DIGO")),
-                      SizedBox(width: 6),
-                      Expanded(child: _Label("VENCE")),
-                    ],
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          s?["code"] ?? s?["id"] ?? "430075236",
-                          style: const TextStyle(
-                            color: grisTexto,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          s?["expiresAt"] ?? "30/06/2025",
-                          style: const TextStyle(
-                            color: grisTexto,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-
-                  // PROGRAMA
-                  const _Label("PROGRAMA"),
-                  Text(
-                    (s?["program"] ?? "INGENIERIA DE SISTEMAS")
-                        .toString()
-                        .toUpperCase(),
-                    style: const TextStyle(
-                      color: grisTexto,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // BANDA ROJA ESTUDIANTE
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 10,
-                      horizontal: 14,
-                    ),
-                    decoration: BoxDecoration(
-                      color: rojoMarca,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        "ESTUDIANTE",
-                        style: TextStyle(
-                          color: Colors.white,
-                          letterSpacing: 1.1,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 18,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 14),
-            // Leyenda de expiraciÃ³n (fuera de la tarjeta)
-            Column(
-              children: [
-                RichText(
-                  textAlign: TextAlign.center,
-                  text: TextSpan(
-                    style: const TextStyle(fontFamily: 'Roboto'),
-                    children: [
-                      const TextSpan(
-                        text: "CÃ“DIGO QR\n",
-                        style: TextStyle(
-                          color: Color(0xFFB0191D),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                      const TextSpan(
-                        text: "EXPIRA EN ",
-                        style: TextStyle(
-                          color: Color(0xFFB0191D),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                      TextSpan(
-                        text: "${_secondsLeft.clamp(0, 999)} s",
-                        style: const TextStyle(
-                          color: Color(0xFFB0191D),
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  "Se renueva automÃ¡ticamente",
-                  style: TextStyle(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurfaceVariant.withValues(alpha: 0.85),
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            OutlinedButton(
-              onPressed: _fetchQr,
-              child: const Text("Generar ahora"),
-            ),
-          ],
         ),
       ),
     );
   }
 }
 
-// ---------- Widgets auxiliares ----------
 
-class _Label extends StatelessWidget {
-  final String text;
-  const _Label(this.text);
+// ---------- Widgets auxiliares ----------
+class _DigitalIdCard extends StatelessWidget {
+  final Map<String, dynamic>? student;
+  final String? qrUrl;
+  final String? ephemeralCode;
+  final int secondsLeft;
+  final VoidCallback onUploadPhoto;
+  const _DigitalIdCard({
+    required this.student,
+    required this.qrUrl,
+    required this.ephemeralCode,
+    required this.secondsLeft,
+    required this.onUploadPhoto,
+  });
   @override
   Widget build(BuildContext context) {
-    // Calculate color at runtime, can't be const
-    final color = Theme.of(
-      context,
-    ).colorScheme.onSurface.withValues(alpha: 0.7);
+    final name = (student?['name'] ?? 'Sin nombre').toString();
+    final program = (student?['program'] ?? 'Programa pendiente').toString();
+    final code = (student?['code'] ?? '--').toString();
+    final expiry = (student?['expiresAt'] ?? 'Sin definir').toString();
+    final role = (student?['role'] ?? 'ESTUDIANTE').toString().toUpperCase();
+    final email = (student?['email'] ?? '').toString();
 
-    return Text(
-      text,
-      style: TextStyle(
-        letterSpacing: 1.4,
-        fontSize: 11,
-        color: color, // Use calculated color
-        fontWeight: FontWeight.w700,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final theme = Theme.of(context);
+        final isCompact = constraints.maxWidth < 520;
+        final textAlign = isCompact ? TextAlign.center : TextAlign.start;
+        final wrapAlignment = isCompact ? WrapAlignment.center : WrapAlignment.start;
+        final photoWidth = isCompact ? 140.0 : 160.0;
+        final photoHeight = isCompact ? 172.0 : 196.0;
+
+        final photo = Stack(
+          clipBehavior: Clip.none,
+          children: [
+            _FotoBox(
+              photoAssetPath: 'assets/img/foto_carnet.png',
+              photoUrl: student?['photoUrl'] as String?,
+              width: photoWidth,
+              height: photoHeight,
+              onTap: onUploadPhoto,
+            ),
+            Positioned(
+              bottom: 12,
+              right: 12,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary,
+                  shape: BoxShape.circle,
+                  boxShadow: BrandShadows.primaryButton(true),
+                ),
+                child: const Icon(
+                  Icons.camera_alt_outlined,
+                  size: 18,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        );
+
+        final infoColumn = Column(
+          crossAxisAlignment: isCompact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+          children: [
+            Align(
+              alignment: isCompact ? Alignment.center : Alignment.centerLeft,
+              child: const InfoBadge(
+                icon: Icons.verified_user_outlined,
+                label: 'Credencial activa',
+              ),
+            ),
+            const SizedBox(height: BrandSpacing.sm),
+            Text(
+              name,
+              style: theme.textTheme.headlineSmall,
+              textAlign: textAlign,
+            ),
+            const SizedBox(height: BrandSpacing.xs),
+            Text(
+              program,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: textAlign,
+            ),
+            const SizedBox(height: BrandSpacing.sm),
+            Wrap(
+              alignment: wrapAlignment,
+              runAlignment: wrapAlignment,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: BrandSpacing.sm,
+              runSpacing: BrandSpacing.xs,
+              children: [
+                _InfoPill(
+                  icon: Icons.badge_outlined,
+                  label: 'Codigo $code',
+                ),
+                _InfoPill(
+                  icon: Icons.event_outlined,
+                  label: 'Vigencia $expiry',
+                ),
+                if (email.isNotEmpty)
+                  _InfoPill(
+                    icon: Icons.mail_outline,
+                    label: email,
+                  ),
+                if (ephemeralCode != null && ephemeralCode!.isNotEmpty)
+                  _InfoPill(
+                    icon: Icons.lock_clock,
+                    label: 'Token ${ephemeralCode!}',
+                  ),
+              ],
+            ),
+            const SizedBox(height: BrandSpacing.sm),
+            Align(
+              alignment: isCompact ? Alignment.center : Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  gradient: BrandGradients.primary(true),
+                  borderRadius: BorderRadius.circular(BrandRadii.pill),
+                  boxShadow: BrandShadows.primaryButton(true),
+                ),
+                child: Text(
+                  role,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: Colors.white,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+
+        final headerChildren = isCompact
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  photo,
+                  const SizedBox(height: BrandSpacing.md),
+                  infoColumn,
+                ],
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  photo,
+                  const SizedBox(width: BrandSpacing.lg),
+                  Expanded(child: infoColumn),
+                ],
+              );
+
+        return FrostedPanel(
+          padding: const EdgeInsets.fromLTRB(32, 32, 32, 28),
+          borderRadius: BrandRadii.large,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              headerChildren,
+              const SizedBox(height: BrandSpacing.lg),
+              Container(
+                padding: const EdgeInsets.all(BrandSpacing.md),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [BrandColors.navySoft, BrandColors.navy],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(BrandRadii.large),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _QrGrande(qrUrl: qrUrl, size: 220),
+                    const SizedBox(height: BrandSpacing.sm),
+                    Text(
+                      secondsLeft > 0
+                          ? 'Renovacion automatica en ${secondsLeft.clamp(0, 999)} s'
+                          : 'Generando nuevo codigo...',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+class _InfoPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  const _InfoPill({required this.icon, required this.label});
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(BrandRadii.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: theme.colorScheme.primary),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
-
+class _QrStatusPanel extends StatelessWidget {
+  final int secondsLeft;
+  final VoidCallback onRefresh;
+  const _QrStatusPanel({required this.secondsLeft, required this.onRefresh});
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bool expiring = secondsLeft <= 10;
+    final color = expiring ? theme.colorScheme.error : theme.colorScheme.primary;
+    return FrostedPanel(
+      padding: const EdgeInsets.fromLTRB(32, 28, 32, 30),
+      borderRadius: BrandRadii.large,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Codigo dinamico', style: theme.textTheme.titleMedium),
+          const SizedBox(height: BrandSpacing.xs),
+          Text(
+            'El QR se actualiza de forma frecuente para evitar copias o capturas.',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: BrandSpacing.md),
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Icon(Icons.timer_outlined, color: color),
+              ),
+              const SizedBox(width: BrandSpacing.sm),
+              Text(
+                secondsLeft > 0
+                    ? 'Renovacion en ${secondsLeft.clamp(0, 999)} s'
+                    : 'Actualizando...',
+                style: theme.textTheme.titleMedium?.copyWith(color: color),
+              ),
+            ],
+          ),
+          const SizedBox(height: BrandSpacing.md),
+          PrimaryButton(
+            onPressed: onRefresh,
+            expand: false,
+            child: const Text('Generar nuevo QR'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+class _AccountInfoPanel extends StatelessWidget {
+  final Map<String, dynamic>? student;
+  final VoidCallback onUploadPhoto;
+  const _AccountInfoPanel({
+    required this.student,
+    required this.onUploadPhoto,
+  });
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final code = (student?['code'] ?? '--').toString();
+    final program = (student?['program'] ?? 'Programa pendiente').toString();
+    final expiry = (student?['expiresAt'] ?? 'Sin definir').toString();
+    final email = (student?['email'] ?? '').toString();
+    return FrostedPanel(
+      padding: const EdgeInsets.fromLTRB(32, 28, 32, 32),
+      borderRadius: BrandRadii.large,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Detalles de la cuenta', style: theme.textTheme.titleMedium),
+          const SizedBox(height: BrandSpacing.sm),
+          _DetailRow(
+            label: 'Codigo',
+            value: code,
+            icon: Icons.badge_outlined,
+          ),
+          _DetailRow(
+            label: 'Programa',
+            value: program,
+            icon: Icons.school_outlined,
+          ),
+          _DetailRow(
+            label: 'Vigencia',
+            value: expiry,
+            icon: Icons.event_outlined,
+          ),
+          if (email.isNotEmpty)
+            _DetailRow(
+              label: 'Correo',
+              value: email,
+              icon: Icons.alternate_email,
+            ),
+          const SizedBox(height: BrandSpacing.md),
+          SecondaryButton(
+            onPressed: onUploadPhoto,
+            child: const Text('Actualizar foto'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+class _DetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData? icon;
+  const _DetailRow({required this.label, required this.value, this.icon});
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 18, color: theme.colorScheme.primary),
+            const SizedBox(width: BrandSpacing.xs),
+          ],
+          Text(
+            label,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const Spacer(),
+          Text(
+            value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 class _FotoBox extends StatefulWidget {
-  final String? photoUrl; // si en el futuro viene del backend
-  final String photoAssetPath; // fallback local
+  final String? photoUrl;
+  final String photoAssetPath;
   final double width;
   final double height;
-
+  final VoidCallback? onTap;
   const _FotoBox({
     required this.photoAssetPath,
     this.photoUrl,
     this.width = 150,
     this.height = 175,
+    this.onTap,
   });
-
   @override
   State<_FotoBox> createState() => _FotoBoxState();
 }
-
 class _FotoBoxState extends State<_FotoBox> {
   ImageProvider? _provider;
   Uint8List? _bytes;
-
   @override
   void initState() {
     super.initState();
     _computeProvider();
   }
-
   @override
   void didUpdateWidget(covariant _FotoBox oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -793,7 +966,6 @@ class _FotoBoxState extends State<_FotoBox> {
       _computeProvider();
     }
   }
-
   void _computeProvider() {
     final url = widget.photoUrl;
     try {
@@ -803,7 +975,6 @@ class _FotoBoxState extends State<_FotoBox> {
           _bytes = base64Decode(b64);
           _provider = MemoryImage(_bytes!);
         } else if (url.startsWith('http://') || url.startsWith('https://')) {
-          // Usa el provider directamente para evitar placeholders/fades en cada rebuild
           _provider = CachedNetworkImageProvider(url);
         } else {
           _provider = AssetImage(widget.photoAssetPath);
@@ -815,10 +986,9 @@ class _FotoBoxState extends State<_FotoBox> {
       _provider = AssetImage(widget.photoAssetPath);
     }
   }
-
   @override
   Widget build(BuildContext context) {
-    final img = _provider != null
+    final image = _provider != null
         ? Image(
             image: _provider!,
             fit: BoxFit.cover,
@@ -826,62 +996,104 @@ class _FotoBoxState extends State<_FotoBox> {
             gaplessPlayback: true,
           )
         : Image.asset(widget.photoAssetPath, fit: BoxFit.cover);
-
-    return Container(
-      width: widget.width,
-      height: widget.height,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE6E6E6)),
-        boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black12)],
+    final outerRadius = BorderRadius.circular(22);
+    final innerRadius = BorderRadius.circular(18);
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: Container(
+        width: widget.width,
+        height: widget.height,
+        decoration: BoxDecoration(
+          gradient: BrandGradients.surface,
+          borderRadius: outerRadius,
+          border: Border.all(
+            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.22),
+            width: 1.4,
+          ),
+          boxShadow: BrandShadows.surface,
+        ),
+        child: ClipRRect(borderRadius: innerRadius, child: image),
       ),
-      child: ClipRRect(borderRadius: BorderRadius.circular(10), child: img),
     );
   }
 }
-
 class _QrGrande extends StatelessWidget {
   final String? qrUrl;
   final double size;
-  const _QrGrande({this.qrUrl, this.size = 230});
-
+  const _QrGrande({this.qrUrl, this.size = 220});
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       width: size,
       height: size,
-      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-        boxShadow: [
-          BoxShadow(blurRadius: 6, color: Colors.black.withValues(alpha: 0.08)),
-        ],
+        gradient: BrandGradients.surface,
+        borderRadius: BorderRadius.circular(BrandRadii.large),
+        border: Border.all(color: theme.colorScheme.primary.withValues(alpha: 0.18)),
+        boxShadow: BrandShadows.surface,
       ),
-      child: qrUrl == null
-          ? const Center(child: CircularProgressIndicator())
-          : AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              transitionBuilder: (child, anim) => FadeTransition(
-                opacity: anim,
-                child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.98, end: 1).animate(
-                    CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(BrandRadii.medium),
+          ),
+          child: Center(
+            child: qrUrl == null
+                ? const SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: CircularProgressIndicator(strokeWidth: 3),
+                  )
+                : AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    transitionBuilder: (child, anim) => FadeTransition(
+                      opacity: anim,
+                      child: ScaleTransition(
+                        scale: Tween<double>(begin: 0.95, end: 1).animate(
+                          CurvedAnimation(
+                            parent: anim,
+                            curve: Curves.easeOutCubic,
+                          ),
+                        ),
+                        child: child,
+                      ),
+                    ),
+                    child: QrImageView(
+                      key: ValueKey(qrUrl),
+                      data: qrUrl!,
+                      version: QrVersions.auto,
+                      backgroundColor: Colors.white,
+                    ),
                   ),
-                  child: child,
-                ),
-              ),
-              child: QrImageView(
-                key: ValueKey(qrUrl),
-                data: qrUrl!,
-                version: QrVersions.auto,
-                size: size - 12, // ocupa casi todo el contenedor
-                backgroundColor: Colors.white,
-                // foregroundColor default es negro para buen contraste
-              ),
-            ),
+          ),
+        ),
+      ),
     );
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

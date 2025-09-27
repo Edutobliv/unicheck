@@ -1,10 +1,13 @@
+﻿import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'app_theme.dart';
+
 import 'api_config.dart';
+import 'ui_kit.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -14,6 +17,8 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  Timer? _retryTimer;
+  int _retrySeconds = 0;
   final _emailController = TextEditingController();
   final _passController = TextEditingController();
   bool _loading = false;
@@ -58,6 +63,10 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _login() async {
+    FocusScope.of(context).unfocus();
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _retrySeconds = 0;
     setState(() {
       _loading = true;
       _error = null;
@@ -80,9 +89,11 @@ class _LoginPageState extends State<LoginPage> {
           ? {'email': input, 'password': _passController.text}
           : {'code': input, 'password': _passController.text};
 
+      final loginUri = Uri.parse(_baseUrl).resolve('auth/login');
+
       final resp = await http
           .post(
-            Uri.parse('$_baseUrl/auth/login'),
+            loginUri,
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode(payload),
           )
@@ -162,6 +173,9 @@ class _LoginPageState extends State<LoginPage> {
           _error = msg;
         });
       }
+    } on TimeoutException catch (_) {
+      _startRetryCountdown();
+      return;
     } catch (e) {
       setState(() {
         _error = 'Error de red: ${e.toString()} (Origen: red)';
@@ -175,253 +189,294 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        title: Text(
-          'Unicheck',
-          style: theme.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.2,
-            color: theme.colorScheme.onInverseSurface,
-          ),
-        ),
-      ),
-      body: Stack(
-        children: [
-          const _BackgroundCanvas(),
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final isWide = constraints.maxWidth > 860;
-                final contentPadding = EdgeInsets.symmetric(
-                  horizontal: isWide ? 64 : 24,
-                  vertical: isWide ? 48 : 24,
-                );
-                final hero = _HeroPane(isWide: isWide);
-                final card = _LoginCard(
-                  emailController: _emailController,
-                  passController: _passController,
-                  loading: _loading,
-                  error: _error,
-                  onLogin: _loading ? null : _login,
-                  onRegister: () =>
-                      Navigator.of(context).pushNamed('/register'),
-                );
+  void _startRetryCountdown() {
+    _retryTimer?.cancel();
+    _retrySeconds = 30;
 
-                if (isWide) {
-                  return Padding(
-                    padding: contentPadding,
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Expanded(child: hero),
-                        const SizedBox(width: 56),
-                        card,
-                      ],
-                    ),
-                  );
-                }
+    setState(() {
+      _loading = false;
+      _error = 'Estamos iniciando el servidor... reintento en $_retrySeconds s';
+    });
 
-                return SingleChildScrollView(
-                  padding: contentPadding.copyWith(bottom: 48),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [hero, const SizedBox(height: 40), card],
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
+    _retryTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (_retrySeconds <= 1) {
+        timer.cancel();
+        _retrySeconds = 0;
+        setState(() {
+          _error = 'Estamos iniciando el servidor... reintento en $_retrySeconds s';
+        });
+        _login();
+      } else {
+        setState(() {
+          _retrySeconds -= 1;
+          _error = 'Estamos iniciando el servidor... reintento en $_retrySeconds s';
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
+    _retryTimer?.cancel();
     _emailController.dispose();
     _passController.dispose();
     super.dispose();
   }
-}
-
-class _BackgroundCanvas extends StatelessWidget {
-  const _BackgroundCanvas();
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [const Color(0xFF0B0D0B), BrandColors.charcoal],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+    return BrandScaffold(
+      title: 'Iniciar sesion',
+      heroBackground: true,
+      padding: EdgeInsets.zero,
+      actions: [
+        TextButton(
+          onPressed: _loading
+              ? null
+              : () => Navigator.of(context).pushReplacementNamed('/register'),
+          child: const Text('Crear cuenta'),
         ),
-      ),
-      child: Stack(
-        children: const [
-          Positioned(
-            top: -140,
-            left: -120,
-            child: _GlowCircle(color: Color(0xB3A5D6A7), size: 340),
-          ),
-          Positioned(
-            bottom: -160,
-            right: -140,
-            child: _GlowCircle(color: Color(0xB31B5E20), size: 420),
-          ),
-        ],
+      ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 980;
+          final horizontalPadding = isWide ? 72.0 : 24.0;
+          final verticalPadding = isWide ? 48.0 : 24.0;
+
+          final hero = _LoginHero(
+            compact: !isWide,
+            onRegister: _loading
+                ? null
+                : () => Navigator.of(context).pushReplacementNamed('/register'),
+          );
+          final form = _LoginFormCard(
+            emailController: _emailController,
+            passController: _passController,
+            loading: _loading,
+            error: _error,
+            onLogin: _loading ? null : _login,
+            onForgotPassword: () {},
+          );
+
+          if (isWide) {
+            return Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: horizontalPadding,
+                vertical: verticalPadding,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: hero),
+                  const SizedBox(width: BrandSpacing.xl),
+                  Expanded(child: form),
+                ],
+              ),
+            );
+          }
+
+          return SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              verticalPadding,
+              horizontalPadding,
+              BrandSpacing.xl,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                hero,
+                const SizedBox(height: BrandSpacing.xl),
+                form,
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 }
 
-class _GlowCircle extends StatelessWidget {
-  final Color color;
-  final double size;
-  const _GlowCircle({required this.color, required this.size});
+class _LoginHero extends StatelessWidget {
+  const _LoginHero({required this.compact, required this.onRegister});
 
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [color, color.withValues(alpha: 0.0)],
-            stops: const [0.0, 1.0],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HeroPane extends StatelessWidget {
-  final bool isWide;
-  const _HeroPane({required this.isWide});
+  final bool compact;
+  final VoidCallback? onRegister;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final onDark = theme.colorScheme.onInverseSurface;
-    final headline = theme.textTheme.headlineMedium?.copyWith(
-      fontSize: isWide ? 50 : 40,
-      height: 1.05,
-      letterSpacing: -0.5,
-      color: onDark,
-    );
-    final body = theme.textTheme.bodyLarge?.copyWith(
-      fontSize: isWide ? 18 : 16,
-      color: onDark.withValues(alpha: 0.88),
-    );
+    final textAlign = compact ? TextAlign.center : TextAlign.start;
     return Column(
-      crossAxisAlignment: isWide
-          ? CrossAxisAlignment.start
-          : CrossAxisAlignment.center,
+      crossAxisAlignment:
+          compact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Align(
-          alignment: isWide ? Alignment.centerLeft : Alignment.center,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-            decoration: BoxDecoration(
-              color: BrandColors.mint.withValues(alpha: 0.18),
-              borderRadius: BorderRadius.circular(40),
-              border: Border.all(
-                color: BrandColors.mint.withValues(alpha: 0.45),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.shield_moon_outlined,
-                  size: 18,
-                  color: theme.colorScheme.inversePrimary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Control inteligente de asistencia',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: theme.colorScheme.inversePrimary,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              ],
-            ),
+        const InfoBadge(
+          icon: Icons.shield_outlined,
+          label: 'Accesos protegidos en tiempo real',
+        ),
+        const SizedBox(height: BrandSpacing.lg),
+        Text(
+          'Bienvenido a Unicheck',
+          style: theme.textTheme.headlineMedium?.copyWith(
+            color: Colors.white,
+            letterSpacing: -0.6,
+            height: 1.05,
           ),
+          textAlign: textAlign,
         ),
-        const SizedBox(height: 28),
+        const SizedBox(height: BrandSpacing.sm),
         Text(
-          'Unicheck - carnet digital',
-          style: headline,
-          textAlign: isWide ? TextAlign.left : TextAlign.center,
+          'Gestiona tu credencial digital, sesiones de porteria y asistencia con seguridad empresarial.',
+          style: theme.textTheme.bodyLarge?.copyWith(
+            color: Colors.white.withValues(alpha: 0.86),
+          ),
+          textAlign: textAlign,
         ),
-        const SizedBox(height: 18),
-        Text(
-          'Unicheck centraliza accesos, monitoreo y alertas para tu comunidad educativa en un solo lugar.',
-          style: body,
-          textAlign: isWide ? TextAlign.left : TextAlign.center,
-        ),
-        const SizedBox(height: 32),
+        const SizedBox(height: BrandSpacing.lg),
         Wrap(
-          spacing: 16,
-          runSpacing: 12,
-          alignment: isWide ? WrapAlignment.start : WrapAlignment.center,
+          alignment: compact ? WrapAlignment.center : WrapAlignment.start,
+          spacing: BrandSpacing.sm,
+          runSpacing: BrandSpacing.sm,
           children: const [
-            _FeatureChip(
-              icon: Icons.qr_code_scanner,
-              label: 'Porteria con QR en vivo',
-            ),
-            _FeatureChip(
-              icon: Icons.auto_graph_rounded,
-              label: 'Reportes potenciados por IA',
-            ),
-            _FeatureChip(
-              icon: Icons.groups_rounded,
-              label: 'Seguimiento docente y alumno',
-            ),
+            _HeroChip(icon: Icons.qr_code_rounded, label: 'QR dinamico'),
+            _HeroChip(icon: Icons.devices_other, label: 'Multiplataforma'),
+            _HeroChip(icon: Icons.lock_clock, label: 'Tokens efimeros'),
           ],
+        ),
+        const SizedBox(height: BrandSpacing.lg),
+        SecondaryButton(
+          onPressed: onRegister,
+          expand: false,
+          child: const Text('Crear cuenta nueva'),
         ),
       ],
     );
   }
 }
 
-class _FeatureChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  const _FeatureChip({required this.icon, required this.label});
+class _LoginFormCard extends StatelessWidget {
+  const _LoginFormCard({
+    required this.emailController,
+    required this.passController,
+    required this.loading,
+    required this.error,
+    required this.onLogin,
+    required this.onForgotPassword,
+  });
+
+  final TextEditingController emailController;
+  final TextEditingController passController;
+  final bool loading;
+  final String? error;
+  final VoidCallback? onLogin;
+  final VoidCallback onForgotPassword;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final onDark = theme.colorScheme.onInverseSurface;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: BrandColors.mint.withValues(alpha: 0.35)),
-      ),
-      child: Row(
+    return FrostedPanel(
+      padding: const EdgeInsets.fromLTRB(32, 32, 32, 28),
+      borderRadius: BrandRadii.large,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18, color: onDark.withValues(alpha: 0.92)),
-          const SizedBox(width: 8),
           Text(
-            label,
+            'Inicia sesion',
+            style: theme.textTheme.headlineSmall,
+          ),
+          const SizedBox(height: BrandSpacing.xs),
+          Text(
+            'Introduce tu correo institucional o tu codigo de estudiante para continuar.',
             style: theme.textTheme.bodyMedium?.copyWith(
-              color: onDark.withValues(alpha: 0.92),
-              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurfaceVariant,
             ),
+          ),
+          const SizedBox(height: BrandSpacing.lg),
+          TextField(
+            controller: emailController,
+            decoration: const InputDecoration(
+              labelText: 'Correo institucional o codigo',
+              prefixIcon: Icon(Icons.account_circle_outlined),
+            ),
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: BrandSpacing.sm),
+          TextField(
+            controller: passController,
+            decoration: InputDecoration(
+              labelText: 'Contrasena',
+              prefixIcon: const Icon(Icons.lock_outline),
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.visibility_outlined),
+                onPressed: () {},
+              ),
+            ),
+            obscureText: true,
+            onSubmitted: (_) => onLogin?.call(),
+          ),
+          const SizedBox(height: BrandSpacing.xs),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: onForgotPassword,
+              child: const Text('Olvide mi contrasena'),
+            ),
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: error == null
+                ? const SizedBox(height: BrandSpacing.xs)
+                : Padding(
+                    key: ValueKey(error),
+                    padding: const EdgeInsets.only(bottom: BrandSpacing.sm),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.error.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: theme.colorScheme.error.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Text(
+                        error!,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.error,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+          ),
+          PrimaryButton(
+            onPressed: onLogin,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: loading
+                  ? const SizedBox(
+                      key: ValueKey('loading'),
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2.4),
+                    )
+                  : const Text('Ingresar a Unicheck'),
+            ),
+          ),
+          const SizedBox(height: BrandSpacing.sm),
+          SecondaryButton(
+            onPressed: onLogin == null
+                ? null
+                : () => Navigator.of(context).pushReplacementNamed('/register'),
+            child: const Text('Crear cuenta nueva'),
           ),
         ],
       ),
@@ -429,168 +484,34 @@ class _FeatureChip extends StatelessWidget {
   }
 }
 
-class _LoginCard extends StatelessWidget {
-  final TextEditingController emailController;
-  final TextEditingController passController;
-  final bool loading;
-  final String? error;
-  final VoidCallback? onLogin;
-  final VoidCallback onRegister;
+class _HeroChip extends StatelessWidget {
+  const _HeroChip({required this.icon, required this.label});
 
-  const _LoginCard({
-    required this.emailController,
-    required this.passController,
-    required this.loading,
-    required this.error,
-    required this.onLogin,
-    required this.onRegister,
-  });
+  final IconData icon;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final brightness = theme.brightness;
-    final cardColor = theme.colorScheme.surface.withValues(
-      alpha: brightness == Brightness.dark ? 0.82 : 0.96,
-    );
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 420),
-      child: Container(
-        decoration: BoxDecoration(
-          color: cardColor,
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(
-            color: theme.colorScheme.primary.withValues(alpha: 0.18),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(BrandRadii.pill),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: Colors.white),
+          const SizedBox(width: BrandSpacing.xs),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: theme.colorScheme.primary.withValues(alpha: 0.16),
-              blurRadius: 38,
-              spreadRadius: 0,
-              offset: const Offset(0, 28),
-            ),
-          ],
-        ),
-        padding: const EdgeInsets.fromLTRB(32, 36, 32, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Inicia sesion',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontSize: 26,
-                letterSpacing: -0.2,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Introduce tu correo institucional o tu codigo de estudiante para continuar.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.74),
-                height: 1.35,
-              ),
-            ),
-            const SizedBox(height: 28),
-            TextField(
-              controller: emailController,
-              decoration: const InputDecoration(
-                labelText: 'Correo o codigo',
-                prefixIcon: Icon(Icons.person_outline),
-              ),
-              keyboardType: TextInputType.emailAddress,
-              textInputAction: TextInputAction.next,
-            ),
-            const SizedBox(height: 18),
-            TextField(
-              controller: passController,
-              decoration: const InputDecoration(
-                labelText: 'Contrasena',
-                prefixIcon: Icon(Icons.lock_outline),
-              ),
-              obscureText: true,
-              onSubmitted: (_) => onLogin?.call(),
-            ),
-            const SizedBox(height: 14),
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              child: error == null
-                  ? const SizedBox(height: 0)
-                  : Padding(
-                      key: ValueKey(error),
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(
-                        error!,
-                        style: TextStyle(
-                          color: theme.colorScheme.error,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: onLogin,
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 250),
-                  child: loading
-                      ? const SizedBox(
-                          key: ValueKey('loading'),
-                          height: 24,
-                          width: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2.4),
-                        )
-                      : const Padding(
-                          key: ValueKey('text'),
-                          padding: EdgeInsets.symmetric(vertical: 4),
-                          child: Text('Entrar a Unicheck'),
-                        ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                Expanded(
-                  child: Divider(
-                    color: theme.colorScheme.outlineVariant.withValues(
-                      alpha: 0.6,
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text(
-                    'Nuevo por aqui?',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withValues(
-                        alpha: 0.68,
-                      ),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Divider(
-                    color: theme.colorScheme.outlineVariant.withValues(
-                      alpha: 0.6,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: onRegister,
-                child: const Text('Crear cuenta'),
-              ),
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
