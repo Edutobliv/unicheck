@@ -22,6 +22,7 @@ class _LoginPageState extends State<LoginPage> {
   final _emailController = TextEditingController();
   final _passController = TextEditingController();
   bool _loading = false;
+  bool _passwordVisible = false;
   String? _error;
   final String _baseUrl = ApiConfig.baseUrl;
 
@@ -208,13 +209,15 @@ class _LoginPageState extends State<LoginPage> {
         timer.cancel();
         _retrySeconds = 0;
         setState(() {
-          _error = 'Estamos iniciando el servidor... reintento en $_retrySeconds s';
+          _error =
+              'Estamos iniciando el servidor... reintento en $_retrySeconds s';
         });
         _login();
       } else {
         setState(() {
           _retrySeconds -= 1;
-          _error = 'Estamos iniciando el servidor... reintento en $_retrySeconds s';
+          _error =
+              'Estamos iniciando el servidor... reintento en $_retrySeconds s';
         });
       }
     });
@@ -259,6 +262,12 @@ class _LoginPageState extends State<LoginPage> {
             passController: _passController,
             loading: _loading,
             error: _error,
+            passwordVisible: _passwordVisible,
+            onTogglePasswordVisibility: () {
+              setState(() {
+                _passwordVisible = !_passwordVisible;
+              });
+            },
             onLogin: _loading ? null : _login,
             onForgotPassword: () {},
           );
@@ -313,8 +322,9 @@ class _LoginHero extends StatelessWidget {
     final theme = Theme.of(context);
     final textAlign = compact ? TextAlign.center : TextAlign.start;
     return Column(
-      crossAxisAlignment:
-          compact ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+      crossAxisAlignment: compact
+          ? CrossAxisAlignment.center
+          : CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         const InfoBadge(
@@ -347,14 +357,8 @@ class _LoginHero extends StatelessWidget {
           children: const [
             _HeroChip(icon: Icons.qr_code_rounded, label: 'QR dinamico'),
             _HeroChip(icon: Icons.devices_other, label: 'Multiplataforma'),
-            _HeroChip(icon: Icons.lock_clock, label: 'Tokens efimeros'),
+            _HeroChip(icon: Icons.lock_clock, label: 'Estudiantes y Staff'),
           ],
-        ),
-        const SizedBox(height: BrandSpacing.lg),
-        SecondaryButton(
-          onPressed: onRegister,
-          expand: false,
-          child: const Text('Crear cuenta nueva'),
         ),
       ],
     );
@@ -367,6 +371,8 @@ class _LoginFormCard extends StatelessWidget {
     required this.passController,
     required this.loading,
     required this.error,
+    required this.passwordVisible,
+    required this.onTogglePasswordVisibility,
     required this.onLogin,
     required this.onForgotPassword,
   });
@@ -375,6 +381,8 @@ class _LoginFormCard extends StatelessWidget {
   final TextEditingController passController;
   final bool loading;
   final String? error;
+  final bool passwordVisible;
+  final VoidCallback onTogglePasswordVisibility;
   final VoidCallback? onLogin;
   final VoidCallback onForgotPassword;
 
@@ -388,10 +396,7 @@ class _LoginFormCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            'Inicia sesion',
-            style: theme.textTheme.headlineSmall,
-          ),
+          Text('Inicia sesion', style: theme.textTheme.headlineSmall),
           const SizedBox(height: BrandSpacing.xs),
           Text(
             'Introduce tu correo institucional o tu codigo de estudiante para continuar.',
@@ -413,14 +418,18 @@ class _LoginFormCard extends StatelessWidget {
           TextField(
             controller: passController,
             decoration: InputDecoration(
-              labelText: 'Contrasena',
+              labelText: 'Contraseña',
               prefixIcon: const Icon(Icons.lock_outline),
               suffixIcon: IconButton(
-                icon: const Icon(Icons.visibility_outlined),
-                onPressed: () {},
+                icon: Icon(
+                  passwordVisible
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                ),
+                onPressed: onTogglePasswordVisibility,
               ),
             ),
-            obscureText: true,
+            obscureText: !passwordVisible,
             onSubmitted: (_) => onLogin?.call(),
           ),
           const SizedBox(height: BrandSpacing.xs),
@@ -428,7 +437,7 @@ class _LoginFormCard extends StatelessWidget {
             alignment: Alignment.centerRight,
             child: TextButton(
               onPressed: onForgotPassword,
-              child: const Text('Olvide mi contrasena'),
+              child: const Text('Olvide mi contraseña'),
             ),
           ),
           AnimatedSwitcher(
@@ -507,9 +516,9 @@ class _HeroChip extends StatelessWidget {
           Text(
             label,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),

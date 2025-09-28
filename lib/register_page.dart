@@ -182,8 +182,8 @@ class _RegisterPageState extends State<RegisterPage> {
 
   String? _validatePassword(String? value) {
     final v = (value ?? '').trim();
-    if (v.isEmpty) return 'La contrasena es obligatoria';
-    if (v.length < 8) return 'La contrasena debe tener al menos 8 caracteres';
+    if (v.isEmpty) return 'La contraseña es obligatoria';
+    if (v.length < 8) return 'La contraseña debe tener al menos 8 caracteres';
     return null;
   }
 
@@ -464,16 +464,9 @@ class _RegisterHero extends StatelessWidget {
           spacing: BrandSpacing.sm,
           runSpacing: BrandSpacing.sm,
           children: const [
-            _HeroChip(icon: Icons.qr_code_2, label: 'QR dinamico seguro'),
-            _HeroChip(icon: Icons.people_alt_outlined, label: 'Para estudiantes y staff'),
-            _HeroChip(icon: Icons.lock_clock, label: 'Tokens con expiracion'),
+            _HeroChip(icon: Icons.qr_code_2, label: 'QR seguro'),
+            _HeroChip(icon: Icons.people_alt_outlined, label: 'Registro de Estudiantes'),
           ],
-        ),
-        const SizedBox(height: BrandSpacing.lg),
-        SecondaryButton(
-          onPressed: onLogin,
-          expand: false,
-          child: const Text('Ya tengo cuenta'),
         ),
       ],
     );
@@ -608,7 +601,7 @@ class _RegisterFormCard extends StatelessWidget {
                 const SizedBox(height: BrandSpacing.lg),
                 const SectionHeader(
                   title: 'Contacto y acceso',
-                  caption: 'Confirma tu correo institucional y una contrasena segura.',
+                  caption: 'Confirma tu correo institucional que sera verificado por Codigo y una contraseña segura para la cuenta.',
                 ),
                 const SizedBox(height: BrandSpacing.md),
                 Wrap(
@@ -630,7 +623,7 @@ class _RegisterFormCard extends StatelessWidget {
                       TextFormField(
                         controller: passwordController,
                         decoration: const InputDecoration(
-                          labelText: 'Contrasena',
+                          labelText: 'contraseña',
                           prefixIcon: Icon(Icons.lock_outline),
                         ),
                         obscureText: true,
@@ -641,8 +634,8 @@ class _RegisterFormCard extends StatelessWidget {
                 ),
                 const SizedBox(height: BrandSpacing.lg),
                 const SectionHeader(
-                  title: 'Programa y vigencia',
-                  caption: 'Define el programa academico y opcionalmente una fecha de expiracion.',
+                  title: 'Programa academico',
+                  caption: 'Define el programa academico.',
                 ),
                 const SizedBox(height: BrandSpacing.md),
                 Wrap(
@@ -678,20 +671,21 @@ class _RegisterFormCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    wrapField(
-                      GestureDetector(
-                        onTap: onPickExpiry,
-                        child: AbsorbPointer(
-                          child: TextFormField(
-                            controller: expiryController,
-                            decoration: const InputDecoration(
-                              labelText: 'Fecha de vencimiento (opcional)',
-                              prefixIcon: Icon(Icons.event_outlined),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                    // Fecha de vencimiento deshabilitada temporalmente
+                    //wrapField(
+                    //  GestureDetector(
+                    //    onTap: onPickExpiry,
+                    //    child: AbsorbPointer(
+                    //      child: TextFormField(
+                    //        controller: expiryController,
+                    //        decoration: const InputDecoration(
+                    //          labelText: 'Fecha de vencimiento (opcional)',
+                    //          prefixIcon: Icon(Icons.event_outlined),
+                    //        ),
+                    //      ),
+                    //    ),
+                    //  ),
+                    //),
                   ],
                 ),
                 const SizedBox(height: BrandSpacing.lg),
