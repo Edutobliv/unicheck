@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -223,6 +223,31 @@ class _LoginPageState extends State<LoginPage> {
     });
   }
 
+  Future<void> _handleForgotPassword() async {
+    if (_loading) return;
+    FocusScope.of(context).unfocus();
+    final initialValue = _emailController.text.trim();
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => _ForgotPasswordSheet(
+        baseUrl: _baseUrl,
+        initialIdentifier: initialValue.isNotEmpty ? initialValue : null,
+      ),
+    );
+    if (!mounted) return;
+    if (result == true) {
+      _passController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Contrasena actualizada. Inicia sesion con la nueva contrasena.',
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _retryTimer?.cancel();
@@ -269,7 +294,10 @@ class _LoginPageState extends State<LoginPage> {
               });
             },
             onLogin: _loading ? null : _login,
-            onForgotPassword: () {},
+            onForgotPassword: () {
+              if (_loading) return;
+              _handleForgotPassword();
+            },
           );
 
           if (isWide) {
@@ -489,6 +517,586 @@ class _LoginFormCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+enum _ForgotPasswordStep { identifier, otp, password }
+
+class _ForgotPasswordSheet extends StatefulWidget {
+  const _ForgotPasswordSheet({required this.baseUrl, this.initialIdentifier});
+
+  final String baseUrl;
+  final String? initialIdentifier;
+
+  @override
+  State<_ForgotPasswordSheet> createState() => _ForgotPasswordSheetState();
+}
+
+class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
+  final TextEditingController _identifierCtrl = TextEditingController();
+  final TextEditingController _otpCtrl = TextEditingController();
+  final TextEditingController _passwordCtrl = TextEditingController();
+  final TextEditingController _confirmCtrl = TextEditingController();
+
+  _ForgotPasswordStep _step = _ForgotPasswordStep.identifier;
+  bool _loading = false;
+  String? _globalError;
+  String? _otpError;
+  String? _passwordError;
+  String? _confirmError;
+  String? _identifierValue;
+  bool _identifierIsEmail = false;
+  String? _maskedEmail;
+  String? _debugOtp;
+  String? _otpValue;
+  bool _newPasswordVisible = false;
+  bool _confirmPasswordVisible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final prefill = widget.initialIdentifier?.trim();
+    if (prefill != null && prefill.isNotEmpty) {
+      _identifierCtrl.text = prefill;
+    }
+  }
+
+  @override
+  void dispose() {
+    _identifierCtrl.dispose();
+    _otpCtrl.dispose();
+    _passwordCtrl.dispose();
+    _confirmCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _requestReset({bool resend = false}) async {
+    final input = resend
+        ? (_identifierValue ?? '')
+        : _identifierCtrl.text.trim();
+    if (input.isEmpty) {
+      if (!resend) {
+        setState(() {
+          _globalError = 'Ingresa tu correo institucional o codigo.';
+          _step = _ForgotPasswordStep.identifier;
+        });
+      }
+      return;
+    }
+    final isEmail = input.contains('@');
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _loading = true;
+      if (!resend) {
+        _globalError = null;
+        _otpError = null;
+      }
+    });
+    try {
+      final uri = Uri.parse(
+        widget.baseUrl,
+      ).resolve('auth/password-reset/request');
+      final body = isEmail ? {'email': input} : {'code': input};
+      final resp = await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        Map<String, dynamic> data = {};
+        try {
+          data = jsonDecode(resp.body) as Map<String, dynamic>;
+        } catch (_) {}
+        setState(() {
+          _identifierValue = input;
+          _identifierIsEmail = isEmail;
+          _maskedEmail = data['maskedEmail']?.toString();
+          _debugOtp = data['debugOtp']?.toString();
+          _otpCtrl.clear();
+          _passwordCtrl.clear();
+          _confirmCtrl.clear();
+          _otpValue = null;
+          _passwordError = null;
+          _confirmError = null;
+          _step = _ForgotPasswordStep.otp;
+          if (!resend) {
+            _globalError = null;
+          }
+        });
+      } else {
+        final message =
+            _extractMessage(resp.body) ??
+            'No se pudo enviar el codigo. Intentalo mas tarde.';
+        setState(() {
+          _globalError = message;
+          if (!resend) {
+            _step = _ForgotPasswordStep.identifier;
+          }
+        });
+      }
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _globalError = 'Tiempo de espera agotado. Intentalo de nuevo.';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _globalError = 'Error de red. Intentalo mas tarde.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  void _goBackToIdentifier() {
+    setState(() {
+      _step = _ForgotPasswordStep.identifier;
+      _otpError = null;
+      _passwordError = null;
+      _confirmError = null;
+      _otpValue = null;
+    });
+  }
+
+  void _handleOtpContinue() {
+    final input = _otpCtrl.text.trim();
+    if (!RegExp(r'^\d{6}$').hasMatch(input)) {
+      setState(() {
+        _otpError = 'Ingresa el codigo de 6 digitos.';
+      });
+      return;
+    }
+    setState(() {
+      _otpValue = input;
+      _otpError = null;
+      _passwordError = null;
+      _confirmError = null;
+      _step = _ForgotPasswordStep.password;
+    });
+  }
+
+  bool _isStrongPassword(String value) {
+    if (value.length < 8) return false;
+    final hasUpper = RegExp(r'[A-Z]').hasMatch(value);
+    final hasLower = RegExp(r'[a-z]').hasMatch(value);
+    final hasDigit = RegExp(r'\d').hasMatch(value);
+    final hasSpecial = RegExp(r'[^A-Za-z0-9]').hasMatch(value);
+    return hasUpper && hasLower && hasDigit && hasSpecial;
+  }
+
+  Future<void> _submitNewPassword() async {
+    if (_identifierValue == null || _otpValue == null) {
+      setState(() {
+        _globalError = 'Solicita un codigo antes de continuar.';
+        _step = _ForgotPasswordStep.identifier;
+      });
+      return;
+    }
+    final password = _passwordCtrl.text.trim();
+    final confirm = _confirmCtrl.text.trim();
+
+    if (!_isStrongPassword(password)) {
+      setState(() {
+        _passwordError =
+            'Debe tener minimo 8 caracteres, con mayusculas, minusculas, numero y simbolo.';
+      });
+      return;
+    }
+    if (password != confirm) {
+      setState(() {
+        _confirmError = 'Las contrasenas no coinciden.';
+      });
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _loading = true;
+      _passwordError = null;
+      _confirmError = null;
+      _globalError = null;
+    });
+
+    try {
+      final uri = Uri.parse(
+        widget.baseUrl,
+      ).resolve('auth/password-reset/confirm');
+      final Map<String, dynamic> body = {
+        'otp': _otpValue,
+        'newPassword': password,
+      };
+      if (_identifierIsEmail) {
+        body['email'] = _identifierValue;
+      } else {
+        body['code'] = _identifierValue;
+      }
+      final resp = await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        Navigator.of(context).pop(true);
+        return;
+      }
+
+      final data = _parseBody(resp.body);
+      final errorCode = data['error']?.toString();
+      final message =
+          data['message']?.toString() ?? 'No se pudo actualizar la contrasena.';
+
+      if (errorCode == 'otp_invalid') {
+        setState(() {
+          _loading = false;
+          _step = _ForgotPasswordStep.otp;
+          _otpError = message;
+        });
+        return;
+      }
+
+      if (errorCode == 'otp_locked' ||
+          errorCode == 'otp_expired' ||
+          errorCode == 'otp_required') {
+        setState(() {
+          _loading = false;
+          _step = _ForgotPasswordStep.identifier;
+          _globalError = message;
+          _otpCtrl.clear();
+          _otpValue = null;
+        });
+        return;
+      }
+
+      if (errorCode == 'weak_password') {
+        setState(() {
+          _loading = false;
+          _passwordError = message;
+        });
+        return;
+      }
+
+      setState(() {
+        _loading = false;
+        _globalError = message;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _passwordError = 'Tiempo de espera agotado. Intentalo nuevamente.';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _passwordError = 'Error de red. Intentalo mas tarde.';
+      });
+    }
+  }
+
+  Map<String, dynamic> _parseBody(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) return decoded;
+    } catch (_) {}
+    return const {};
+  }
+
+  String? _extractMessage(String body) {
+    final map = _parseBody(body);
+    final message = map['message'] ?? map['error'];
+    return message?.toString();
+  }
+
+  Widget _buildErrorBanner(String message) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: BrandSpacing.sm),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.error.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.colorScheme.error.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Text(
+        message,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.error,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: SafeArea(
+        top: false,
+        child: AnimatedSize(
+          duration: const Duration(milliseconds: 250),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Recuperar acceso',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: _loading
+                          ? null
+                          : () => Navigator.of(context).pop(false),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: BrandSpacing.sm),
+                Text(
+                  _step == _ForgotPasswordStep.identifier
+                      ? 'Ingresa tu correo institucional o codigo para enviar un codigo de verificacion.'
+                      : _step == _ForgotPasswordStep.otp
+                      ? 'Ingresa el codigo de 6 digitos enviado a tu correo.'
+                      : 'Define una nueva contrasena para tu cuenta.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (_globalError != null) _buildErrorBanner(_globalError!),
+                const SizedBox(height: BrandSpacing.sm),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: _buildStepContent(theme),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStepContent(ThemeData theme) {
+    switch (_step) {
+      case _ForgotPasswordStep.identifier:
+        return _buildIdentifierStep(theme);
+      case _ForgotPasswordStep.otp:
+        return _buildOtpStep(theme);
+      case _ForgotPasswordStep.password:
+        return _buildPasswordStep(theme);
+    }
+  }
+
+  Widget _buildIdentifierStep(ThemeData theme) {
+    return Column(
+      key: const ValueKey('identifier'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _identifierCtrl,
+          decoration: const InputDecoration(
+            labelText: 'Correo institucional o codigo',
+            prefixIcon: Icon(Icons.account_circle_outlined),
+          ),
+          keyboardType: TextInputType.emailAddress,
+          textInputAction: TextInputAction.done,
+          enabled: !_loading,
+          onSubmitted: (_) => _loading ? null : _requestReset(),
+        ),
+        const SizedBox(height: BrandSpacing.md),
+        PrimaryButton(
+          onPressed: _loading ? null : _requestReset,
+          child: _loading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Enviar codigo'),
+        ),
+        const SizedBox(height: BrandSpacing.xs),
+        TextButton(
+          onPressed: _loading ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOtpStep(ThemeData theme) {
+    return Column(
+      key: const ValueKey('otp'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_maskedEmail != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: BrandSpacing.xs),
+            child: Text(
+              'Revisa ${_maskedEmail!} para obtener el codigo.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        if (_debugOtp != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: BrandSpacing.xs),
+            child: Text(
+              'Codigo (debug): $_debugOtp',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
+            ),
+          ),
+        TextField(
+          controller: _otpCtrl,
+          decoration: InputDecoration(
+            labelText: 'Codigo de 6 digitos',
+            prefixIcon: const Icon(Icons.pin_outlined),
+            errorText: _otpError,
+            counterText: '',
+          ),
+          keyboardType: TextInputType.number,
+          maxLength: 6,
+          enabled: !_loading,
+          onSubmitted: (_) => _loading ? null : _handleOtpContinue(),
+        ),
+        const SizedBox(height: BrandSpacing.sm),
+        PrimaryButton(
+          onPressed: _loading ? null : _handleOtpContinue,
+          child: _loading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Continuar'),
+        ),
+        const SizedBox(height: BrandSpacing.xs),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            TextButton(
+              onPressed: _loading ? null : _goBackToIdentifier,
+              child: const Text('Cambiar correo'),
+            ),
+            TextButton(
+              onPressed: _loading ? null : () => _requestReset(resend: true),
+              child: const Text('Reenviar codigo'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPasswordStep(ThemeData theme) {
+    return Column(
+      key: const ValueKey('password'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Tu nueva contrasena debe tener minimo 8 caracteres, incluyendo mayusculas, minusculas, numeros y simbolos.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: BrandSpacing.sm),
+        TextField(
+          controller: _passwordCtrl,
+          decoration: InputDecoration(
+            labelText: 'Nueva contrasena',
+            prefixIcon: const Icon(Icons.lock_outline),
+            errorText: _passwordError,
+            suffixIcon: IconButton(
+              icon: Icon(
+                _newPasswordVisible
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+              ),
+              onPressed: _loading
+                  ? null
+                  : () {
+                      setState(() {
+                        _newPasswordVisible = !_newPasswordVisible;
+                      });
+                    },
+            ),
+          ),
+          obscureText: !_newPasswordVisible,
+          enabled: !_loading,
+        ),
+        const SizedBox(height: BrandSpacing.sm),
+        TextField(
+          controller: _confirmCtrl,
+          decoration: InputDecoration(
+            labelText: 'Confirmar contrasena',
+            prefixIcon: const Icon(Icons.lock_outline),
+            errorText: _confirmError,
+            suffixIcon: IconButton(
+              icon: Icon(
+                _confirmPasswordVisible
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+              ),
+              onPressed: _loading
+                  ? null
+                  : () {
+                      setState(() {
+                        _confirmPasswordVisible = !_confirmPasswordVisible;
+                      });
+                    },
+            ),
+          ),
+          obscureText: !_confirmPasswordVisible,
+          enabled: !_loading,
+        ),
+        const SizedBox(height: BrandSpacing.md),
+        PrimaryButton(
+          onPressed: _loading ? null : _submitNewPassword,
+          child: _loading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Guardar nueva contrasena'),
+        ),
+        const SizedBox(height: BrandSpacing.xs),
+        TextButton(
+          onPressed: _loading
+              ? null
+              : () {
+                  setState(() {
+                    _step = _ForgotPasswordStep.otp;
+                    _passwordError = null;
+                    _confirmError = null;
+                  });
+                },
+          child: const Text('Volver a ingresar codigo'),
+        ),
+      ],
     );
   }
 }

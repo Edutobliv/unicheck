@@ -92,6 +92,19 @@ export async function ensureSchema() {
   );
   create index if not exists rt_user_idx on refresh_tokens (user_code);
 
+  -- Password reset requests
+  create table if not exists password_reset_requests (
+    user_code text primary key references users(code) on delete cascade,
+    email text not null,
+    otp_hash text not null,
+    expires_at timestamptz not null,
+    attempts int not null default 0,
+    max_attempts int not null default 5,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+  );
+  create index if not exists password_reset_requests_expires_idx on password_reset_requests (expires_at);
+
   -- Gates and access events for porter flow
   create table if not exists gates (
     id uuid primary key default gen_random_uuid(),
@@ -175,6 +188,21 @@ function mapUserRow(row) {
     createdAt: row.created_at ? Math.floor(new Date(row.created_at).getTime() / 1000) : undefined,
   };
 }
+function mapPasswordResetRow(row) {
+  if (!row) return null;
+  const toNumber = (value) => (typeof value === 'number' ? value : parseInt(String(value ?? 0), 10) || 0);
+  return {
+    userCode: row.user_code,
+    email: row.email,
+    otpHash: row.otp_hash,
+    expiresAt: row.expires_at ? new Date(row.expires_at) : null,
+    attempts: toNumber(row.attempts),
+    maxAttempts: toNumber(row.max_attempts),
+    createdAt: row.created_at ? new Date(row.created_at) : null,
+    updatedAt: row.updated_at ? new Date(row.updated_at) : null,
+  };
+}
+
 
 export async function getUserByEmail(email) {
   const p = await getPool();
@@ -399,6 +427,66 @@ export async function addAccessEvent({ scannedAt, studentCode, porterCode, gateC
     meta || null,
   ];
   await p.query(sql, vals);
+  return true;
+}
+
+export async function upsertPasswordResetRequest({ userCode, email, otpHash, expiresAt, maxAttempts = 5 }) {
+  if (!userCode || !email || !otpHash || !expiresAt) return null;
+  const p = await getPool();
+  await p.query(
+    `insert into password_reset_requests (user_code, email, otp_hash, expires_at, attempts, max_attempts, created_at, updated_at)
+     values ($1,$2,$3,$4,0,$5,now(),now())
+     on conflict (user_code) do update
+       set email=excluded.email,
+           otp_hash=excluded.otp_hash,
+           expires_at=excluded.expires_at,
+           attempts=0,
+           max_attempts=excluded.max_attempts,
+           updated_at=now()`,
+    [userCode, email, otpHash, expiresAt, maxAttempts]
+  );
+  return true;
+}
+
+export async function getPasswordResetRequest(userCode) {
+  if (!userCode) return null;
+  const p = await getPool();
+  const { rows } = await p.query('select * from password_reset_requests where user_code=$1', [userCode]);
+  return mapPasswordResetRow(rows[0]);
+}
+
+export async function incrementPasswordResetAttempts(userCode) {
+  if (!userCode) return null;
+  const p = await getPool();
+  const { rows } = await p.query(
+    `update password_reset_requests
+        set attempts = attempts + 1,
+            updated_at = now()
+      where user_code=$1
+      returning *`,
+    [userCode]
+  );
+  return mapPasswordResetRow(rows[0]);
+}
+
+export async function deletePasswordResetRequest(userCode) {
+  if (!userCode) return null;
+  const p = await getPool();
+  await p.query('delete from password_reset_requests where user_code=$1', [userCode]);
+  return true;
+}
+
+export async function updateUserPasswordHash(userCode, passwordHash) {
+  if (!userCode || !passwordHash) return null;
+  const p = await getPool();
+  await p.query('update users set password_hash=$2 where code=$1', [userCode, passwordHash]);
+  return true;
+}
+
+export async function deleteRefreshTokensForUser(userCode) {
+  if (!userCode) return null;
+  const p = await getPool();
+  await p.query('delete from refresh_tokens where user_code=$1', [userCode]);
   return true;
 }
 

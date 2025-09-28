@@ -1,4 +1,4 @@
-// index.js (versión ESM)
+﻿// index.js (versiÃ³n ESM)
 import 'dotenv/config';
 import dns from 'node:dns';
 // Prefer IPv4 first to avoid ENETUNREACH when an IPv6 AAAA is returned (Render free often lacks IPv6 egress)
@@ -9,11 +9,12 @@ import helmet from "helmet";
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomInt } from 'node:crypto';
 import swaggerUi from 'swagger-ui-express';
 import YAML from 'yamljs';
 import { generateKeyPair, SignJWT, jwtVerify, exportJWK, importJWK } from "jose";
 import { v4 as uuidv4 } from "uuid";
-import bcrypt from "bcryptjs";
+import bcrypt from "bcryptjs";
 import {
   ensureSchema,
   seedUsersIfEmpty,
@@ -37,6 +38,12 @@ import {
   revokeRefreshToken,
   getRefreshToken,
   getStudentByEmailInsensitive,
+  upsertPasswordResetRequest,
+  getPasswordResetRequest,
+  incrementPasswordResetAttempts,
+  deletePasswordResetRequest,
+  updateUserPasswordHash,
+  deleteRefreshTokensForUser,
 } from "./db.js";
 import { uploadUserAvatarFromDataUrl, createSignedAvatarUrl, replaceUserAvatarFromDataUrl, deleteAvatarPath, supabaseAdmin } from "./storage.js";
 
@@ -48,9 +55,9 @@ const BASE_URL =
   process.env.RENDER_EXTERNAL_URL ||
   `http://localhost:${PORT}`;
 const TOKEN_TTL_SECONDS = 15; // cada token/QR dura 15 segundos
-const SESSION_TTL = process.env.JWT_TTL || '24h'; // duración del JWT de sesión (login)
+const SESSION_TTL = process.env.JWT_TTL || '24h'; // duraciÃ³n del JWT de sesiÃ³n (login)
 
-// Para este MVP usaremos memoria local solo para evitar reuso de tokens efímeros
+// Para este MVP usaremos memoria local solo para evitar reuso de tokens efÃ­meros
 const ROLE_TTL = {
   student: process.env.JWT_TTL_STUDENT || '15m',
   teacher: process.env.JWT_TTL_TEACHER || '1h',
@@ -70,6 +77,63 @@ function parseDurationToSeconds(s) {
   const u = m[2];
   const map = { s: 1, m: 60, h: 3600, d: 86400 };
   return n * (map[u] || 0);
+}
+
+const PASSWORD_RESET_TTL = parseDurationToSeconds(process.env.PASSWORD_RESET_TTL || '10m') || 600;
+const PASSWORD_RESET_MAX_ATTEMPTS = parseInt(process.env.PASSWORD_RESET_MAX_ATTEMPTS || '5', 10) || 5;
+const DEBUG_RESET_OTP = process.env.DEBUG_RESET_OTP === '1';
+
+const mailer = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: process.env.SMTP_SECURE === '1' || String(process.env.SMTP_PORT||'') === '465',
+  auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
+});
+
+async function sendOtpEmail(to, code) {
+  if (!to || !code) return;
+  const from = process.env.SMTP_FROM || 'no-reply@unicheck';
+  const subject = 'Tu codigo de recuperacion Unicheck';
+  const text = `Tu codigo es: ${code}. Vence en ${(PASSWORD_RESET_TTL/60)|0} minutos.`;
+  const html = `<p>Tu codigo es: <b>${code}</b></p><p>Vence en ${(PASSWORD_RESET_TTL/60)|0} minutos.</p>`;
+  await mailer.sendMail({ from, to, subject, text, html });
+}
+
+function maskEmail(email) {
+  if (!email || typeof email !== 'string') return '';
+  const trimmed = email.trim();
+  const at = trimmed.indexOf('@');
+  if (at <= 0) return trimmed;
+  const local = trimmed.slice(0, at);
+  const domain = trimmed.slice(at + 1);
+  const anonymize = (value) => {
+    if (!value) return '';
+    if (value.length <= 2) return value[0] + '*';
+    return value[0] + '*'.repeat(Math.max(1, value.length - 2)) + value.slice(-1);
+  };
+  const maskedLocal = anonymize(local);
+  if (!domain) return maskedLocal;
+  const domainParts = domain.split('.');
+  if (domainParts.length === 0) return maskedLocal;
+  if (domainParts[0]) {
+    domainParts[0] = anonymize(domainParts[0]);
+  }
+  return `${maskedLocal}@${domainParts.join('.')}`;
+}
+
+function generateOtp(length = 6) {
+  const max = 10 ** Math.max(1, length);
+  return randomInt(0, max).toString().padStart(length, '0');
+}
+
+function isStrongPassword(password) {
+  if (typeof password !== 'string') return false;
+  if (password.length < 8) return false;
+  const hasUpper = /[A-Z]/.test(password);
+  const hasLower = /[a-z]/.test(password);
+  const hasDigit = /\d/.test(password);
+  const hasSpecial = /[^A-Za-z0-9]/.test(password);
+  return hasUpper && hasLower && hasDigit && hasSpecial;
 }
 
 // Permitir cualquier dominio por defecto; si se define ALLOWED_EMAIL_DOMAINS,
@@ -133,7 +197,7 @@ let publicJwk;
   // Initialize DB schema and seed demo users if empty
   try {
     await ensureSchema();
-    // Ya no sembramos usuarios demo aquí; la BD productiva tiene sus registros.
+    // Ya no sembramos usuarios demo aquÃ­; la BD productiva tiene sus registros.
     // Si necesitas poblar en desarrollo, usa seedUsersIfEmpty() en scripts separados.
     await seedUsersIfEmpty();
   } catch (e) {
@@ -141,7 +205,7 @@ let publicJwk;
   }
 })();
 
-// Endpoint para publicar la clave pública (útil para verificadores)
+// Endpoint para publicar la clave pÃºblica (Ãºtil para verificadores)
 app.get("/.well-known/jwks.json", (req, res) => {
   res.json({ keys: [publicJwk] });
 });
@@ -191,12 +255,12 @@ app.get('/__debug', async (req, res) => {
   res.json(out);
 });
 
-// Endpoint de login básico
+// Endpoint de login bÃ¡sico
 app.post("/auth/login", async (req, res) => {
   try {
     const { email, password, code } = req.body || {};
     if ((!email && !code) || !password)
-      return res.status(400).json({ error: "missing_credentials", message: "Falta email/código o contraseña" });
+      return res.status(400).json({ error: "missing_credentials", message: "Falta email/cÃ³digo o contraseÃ±a" });
 
     let user;
     if (email) {
@@ -209,9 +273,9 @@ app.post("/auth/login", async (req, res) => {
       user = await getUserByCode(code);
     }
 
-    if (!user) return res.status(401).json({ error: "invalid_credentials", message: "Usuario o contraseña incorrectos" });
+    if (!user) return res.status(401).json({ error: "invalid_credentials", message: "Usuario o contraseÃ±a incorrectos" });
     const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) return res.status(401).json({ error: "invalid_credentials", message: "Usuario o contraseña incorrectos" });
+    if (!ok) return res.status(401).json({ error: "invalid_credentials", message: "Usuario o contraseÃ±a incorrectos" });
 
     // Auto-renew student expiry to 6 months if missing or expired
     try {
@@ -288,6 +352,153 @@ app.post("/auth/login", async (req, res) => {
 });
 
 // Refresh access token using refresh token
+app.post("/auth/password-reset/request", async (req, res) => {
+  try {
+    const { email, code } = req.body || {};
+    const rawEmail = typeof email === "string" ? email.trim() : "";
+    const rawCode = typeof code === "string" ? code.trim() : "";
+    const identifier = rawEmail || rawCode;
+    if (!identifier) {
+      return res.status(400).json({
+        error: "missing_identifier",
+        message: "Debes proporcionar tu correo institucional o codigo.",
+      });
+    }
+
+    let user = null;
+    if (rawEmail) {
+      user = await getUserByEmail(rawEmail);
+    } else if (rawCode) {
+      user = await getUserByCode(rawCode);
+    }
+
+    if (!user) {
+      return res.json({ ok: true, maskedEmail: null, expiresIn: PASSWORD_RESET_TTL });
+    }
+
+    // Send Supabase OTP to email\n    const sb = supabaseAdmin();\n    await sb.auth.signInWithOtp({ email: user.email });
+
+    await upsertPasswordResetRequest({
+      userCode: user.code,
+      email: user.email,
+      otpHash,
+      expiresAt,
+      maxAttempts: PASSWORD_RESET_MAX_ATTEMPTS,
+    });
+
+    if (DEBUG_RESET_OTP) {
+      console.log(`[password-reset] OTP for ${user.email} (${user.code}): ${otp}`);
+    } else {
+      console.log(`[password-reset] OTP enviado a ${user.email}`);
+    }
+
+    const payload = {
+      ok: true,
+      maskedEmail: maskEmail(user.email),
+      expiresIn: PASSWORD_RESET_TTL,
+    };
+    return res.json(payload);
+  } catch (err) {
+    console.error("[password-reset][request]", err);
+    return res.status(500).json({
+      error: "reset_request_failed",
+      message: "No se pudo enviar el codigo. Intentalo mas tarde.",
+    });
+  }
+});
+
+app.post("/auth/password-reset/confirm", async (req, res) => {
+  try {
+    const { email, code, otp, newPassword } = req.body || {};
+    const rawEmail = typeof email === "string" ? email.trim() : "";
+    const rawCode = typeof code === "string" ? code.trim() : "";
+    const identifier = rawEmail || rawCode;
+    const otpValue = typeof otp === "string" ? otp.trim() : String(otp ?? "").trim();
+    const passwordValue = typeof newPassword === "string" ? newPassword.trim() : "";
+
+    if (!identifier || !otpValue || !passwordValue) {
+      return res.status(400).json({
+        error: "missing_params",
+        message: "Faltan datos para restablecer la contrasena.",
+      });
+    }
+
+    if (!isStrongPassword(passwordValue)) {
+      return res.status(400).json({
+        error: "weak_password",
+        message: "La contrasena debe tener minimo 8 caracteres, con mayusculas, minusculas, numero y simbolo.",
+      });
+    }
+
+    let user = null;
+    if (rawEmail) {
+      user = await getUserByEmail(rawEmail);
+    } else if (rawCode) {
+      user = await getUserByCode(rawCode);
+    }
+
+    if (!user) {
+      return res.status(400).json({
+        error: "invalid_request",
+        message: "Solicitud invalida.",
+      });
+    }
+
+    const reset = await getPasswordResetRequest(user.code);
+    if (!reset) {
+      return res.status(400).json({
+        error: "otp_required",
+        message: "Solicita un nuevo codigo antes de continuar.",
+      });
+    }
+
+    if (reset.expiresAt && reset.expiresAt.getTime() <= Date.now()) {
+      await deletePasswordResetRequest(user.code);
+      return res.status(400).json({
+        error: "otp_expired",
+        message: "El codigo expiro. Solicita uno nuevo.",
+      });
+    }
+
+    if (reset.attempts >= reset.maxAttempts) {
+      await deletePasswordResetRequest(user.code);
+      return res.status(400).json({
+        error: "otp_locked",
+        message: "Se agotaron los intentos. Solicita un nuevo codigo.",
+      });
+    }
+
+    const otpOk = await bcrypt.compare(otpValue, reset.otpHash || "");
+    if (!otpOk) {
+      const updated = await incrementPasswordResetAttempts(user.code);
+      if (updated && updated.attempts >= updated.maxAttempts) {
+        await deletePasswordResetRequest(user.code);
+        return res.status(400).json({
+          error: "otp_locked",
+          message: "Se agotaron los intentos. Solicita un nuevo codigo.",
+        });
+      }
+      return res.status(400).json({
+        error: "otp_invalid",
+        message: "Codigo incorrecto. Verifica e intenta de nuevo.",
+      });
+    }
+
+    const newHash = await bcrypt.hash(passwordValue, 10);
+    await updateUserPasswordHash(user.code, newHash);
+    await deletePasswordResetRequest(user.code);
+    await deleteRefreshTokensForUser(user.code);
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("[password-reset][confirm]", err);
+    return res.status(500).json({
+      error: "reset_confirm_failed",
+      message: "No se pudo actualizar la contrasena. Intentalo mas tarde.",
+    });
+  }
+});
+
 app.post('/auth/refresh', async (req, res) => {
   try {
     const { refreshToken } = req.body || {};
@@ -388,7 +599,7 @@ app.post("/auth/register", async (req, res) => {
     res.json({ success: true, ephemeralCode, user: { ...newUser, photoUrl: signedPhoto || newUser.photoUrl } });
   } catch (e) {
     console.error('registration_error', e);
-    res.status(500).json({ error: "registration_failed", message: 'No se pudo registrar. Intenta más tarde.' });
+    res.status(500).json({ error: "registration_failed", message: 'No se pudo registrar. Intenta mÃ¡s tarde.' });
   }
 });
 
@@ -406,7 +617,7 @@ app.get("/users/me/photo-url", requireAuth(), async (req, res) => {
   }
 });
 
-// Reemplazar la foto del usuario autenticado (acepta data URL), comprime y sobreescribe avatar único
+// Reemplazar la foto del usuario autenticado (acepta data URL), comprime y sobreescribe avatar Ãºnico
 app.put("/users/me/photo", requireAuth(), async (req, res) => {
   try {
     const { photo } = req.body || {};
@@ -464,7 +675,7 @@ function requireAuth(role) {
   };
 }
 
-// Endpoint que emite un QR efímero
+// Endpoint que emite un QR efÃ­mero
 app.post("/issue-ephemeral", requireAuth("student"), async (req, res) => {
   try {
     const { code } = req.user;
@@ -572,7 +783,7 @@ app.post("/verify", async (req, res) => {
 
 // --- Flujo Profesor: sesiones y asistencia ---
 
-// Profesor inicia una sesión de clase y obtiene un token para QR que los alumnos escanean
+// Profesor inicia una sesiÃ³n de clase y obtiene un token para QR que los alumnos escanean
 app.post("/prof/start-session", requireAuth("teacher"), async (req, res) => {
   try {
     const teacherCode = req.user.code;
@@ -586,7 +797,7 @@ app.post("/prof/start-session", requireAuth("teacher"), async (req, res) => {
     // Persist session in DB
     await createSessionWithId(sessionId, teacherCode, now, exp, offeringId);
 
-    // Token firmado con HS256 (clave compartida del API) para que el alumno lo envíe en check-in
+    // Token firmado con HS256 (clave compartida del API) para que el alumno lo envÃ­e en check-in
     const sessionToken = await new SignJWT({ scope: "attendance", session_id: sessionId })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setIssuedAt(now)
@@ -609,7 +820,7 @@ app.post("/prof/start-session", requireAuth("teacher"), async (req, res) => {
   }
 });
 
-// Profesor finaliza una sesión (deja de aceptar check-ins, pero permite consultar lista)
+// Profesor finaliza una sesiÃ³n (deja de aceptar check-ins, pero permite consultar lista)
 app.post("/prof/end-session", requireAuth("teacher"), async (req, res) => {
   const sessionId = req.body?.sessionId || req.query?.id;
   if (!sessionId) return res.status(400).json({ error: "missing_session_id" });
@@ -622,7 +833,7 @@ app.post("/prof/end-session", requireAuth("teacher"), async (req, res) => {
   return res.json({ ok: true, session: updated, attendees });
 });
 
-// Alumno hace check-in a la sesión escaneada (necesita estar logueado como student)
+// Alumno hace check-in a la sesiÃ³n escaneada (necesita estar logueado como student)
 app.post("/attendance/check-in", requireAuth("student"), async (req, res) => {
   try {
     const sessionToken = req.body?.sessionToken || req.query?.t;
@@ -653,7 +864,7 @@ app.post("/attendance/check-in", requireAuth("student"), async (req, res) => {
       return res.json({ ok: true, already: true, at: existing.at, sessionId });
     }
 
-    // Buscar datos del estudiante para devolver información útil
+    // Buscar datos del estudiante para devolver informaciÃ³n Ãºtil
     const newEntry = await addAttendance(sessionId, req.user.code, now);
     const entry = newEntry;
 
@@ -663,7 +874,7 @@ app.post("/attendance/check-in", requireAuth("student"), async (req, res) => {
   }
 });
 
-// Profesor consulta la asistencia de una sesión
+// Profesor consulta la asistencia de una sesiÃ³n
 app.get("/prof/session/:id", requireAuth("teacher"), async (req, res) => {
   const sessionId = req.params.id;
   const session = await getSession(sessionId);
@@ -672,7 +883,7 @@ app.get("/prof/session/:id", requireAuth("teacher"), async (req, res) => {
   return res.json({ session, attendees });
 });
 
-// Añadir asistencia manual por profesor
+// AÃ±adir asistencia manual por profesor
 app.post('/prof/attendance/add', requireAuth('teacher'), async (req, res) => {
   try {
     const { sessionId, code, email } = req.body || {};
@@ -680,7 +891,7 @@ app.post('/prof/attendance/add', requireAuth('teacher'), async (req, res) => {
     const session = await getSession(sessionId);
     if (!session) return res.status(404).json({ error: 'session_not_found' });
     if (session.teacherCode !== req.user.code) return res.status(403).json({ error: 'forbidden' });
-    // Resolver estudiante por código o email
+    // Resolver estudiante por cÃ³digo o email
     let student = null;
     if (code) student = await getUserByCode(code);
     if (!student && email) student = await getUserByEmail(email);
@@ -692,7 +903,7 @@ app.post('/prof/attendance/add', requireAuth('teacher'), async (req, res) => {
   }
 });
 
-// Eliminar asistencia de un estudiante en la sesión
+// Eliminar asistencia de un estudiante en la sesiÃ³n
 app.delete('/prof/attendance', requireAuth('teacher'), async (req, res) => {
   try {
     const { sessionId, studentCode } = req.body || {};
@@ -707,7 +918,7 @@ app.delete('/prof/attendance', requireAuth('teacher'), async (req, res) => {
   }
 });
 
-// Autocomplete de estudiantes (email/name). Sólo para docente
+// Autocomplete de estudiantes (email/name). SÃ³lo para docente
 app.get('/prof/students/search', requireAuth('teacher'), async (req, res) => {
   try {
     const q = String(req.query?.q || '').trim();
@@ -720,5 +931,7 @@ app.get('/prof/students/search', requireAuth('teacher'), async (req, res) => {
 });
 
 app.listen(PORT, HOST, () => {
-  console.log("API QR efímero escuchando en " + BASE_URL);
+  console.log("API QR efÃ­mero escuchando en " + BASE_URL);
 });
+
+
