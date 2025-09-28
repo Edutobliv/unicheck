@@ -550,6 +550,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
   String? _maskedEmail;
   String? _debugOtp;
   String? _otpValue;
+  String? _preflightToken;
   bool _newPasswordVisible = false;
   bool _confirmPasswordVisible = false;
   int _resends = 0;
@@ -629,6 +630,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
           _passwordCtrl.clear();
           _confirmCtrl.clear();
           _otpValue = null;
+          _preflightToken = null;
           _passwordError = null;
           _confirmError = null;
           _step = _ForgotPasswordStep.otp;
@@ -732,8 +734,27 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
       if (!mounted) return;
 
       if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        var data = <String, dynamic>{};
+        try {
+          final decoded = jsonDecode(resp.body);
+          if (decoded is Map<String, dynamic>) {
+            data = decoded;
+          }
+        } catch (_) {
+          // Ignore if body is not a valid json map
+        }
+
+        final preflightToken = data['preflightToken'] as String?;
+        if (preflightToken == null) {
+          setState(() {
+            _otpError = 'No se recibio el token de confirmacion del servidor.';
+          });
+          return;
+        }
+
         setState(() {
           _otpValue = input;
+          _preflightToken = preflightToken;
           _passwordError = null;
           _confirmError = null;
           _step = _ForgotPasswordStep.password;
@@ -798,7 +819,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
   }
 
   Future<void> _submitNewPassword() async {
-    if (_identifierValue == null || _otpValue == null) {
+    if (_identifierValue == null || _otpValue == null || _preflightToken == null) {
       setState(() {
         _globalError = 'Solicita un codigo antes de continuar.';
         _step = _ForgotPasswordStep.identifier;
@@ -837,6 +858,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
       final Map<String, dynamic> body = {
         'otp': _otpValue,
         'newPassword': password,
+        'preflightToken': _preflightToken,
       };
       if (_identifierIsEmail) {
         body['email'] = _identifierValue;
@@ -861,7 +883,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
       final message =
           data['message']?.toString() ?? 'No se pudo actualizar la contrasena.';
 
-      if (errorCode == 'otp_invalid') {
+      if (errorCode == 'otp_invalid' || errorCode == 'otp_mismatch') {
         setState(() {
           _loading = false;
           _step = _ForgotPasswordStep.otp;
@@ -872,13 +894,15 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
 
       if (errorCode == 'otp_locked' ||
           errorCode == 'otp_expired' ||
-          errorCode == 'otp_required') {
+          errorCode == 'otp_required' ||
+          errorCode == 'invalid_preflight_token') {
         setState(() {
           _loading = false;
           _step = _ForgotPasswordStep.identifier;
           _globalError = message;
           _otpCtrl.clear();
           _otpValue = null;
+          _preflightToken = null;
         });
         return;
       }

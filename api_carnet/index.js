@@ -1,4 +1,4 @@
-﻿// index.js (versiÃƒÂ³n ESM)
+// index.js (versiÃ³n ESM)
 import 'dotenv/config';
 import dns from 'node:dns';
 // Prefer IPv4 first to avoid ENETUNREACH when an IPv6 AAAA is returned (Render free often lacks IPv6 egress)
@@ -9,7 +9,7 @@ import helmet from "helmet";
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomInt } from 'node:crypto';
+import { randomInt, createHash } from 'node:crypto';
 import swaggerUi from 'swagger-ui-express';
 import YAML from 'yamljs';
 import { generateKeyPair, SignJWT, jwtVerify, exportJWK, importJWK } from "jose";
@@ -56,9 +56,9 @@ const BASE_URL =
   process.env.RENDER_EXTERNAL_URL ||
   `http://localhost:${PORT}`;
 const TOKEN_TTL_SECONDS = 15; // cada token/QR dura 15 segundos
-const SESSION_TTL = process.env.JWT_TTL || '24h'; // duraciÃƒÂ³n del JWT de sesiÃƒÂ³n (login)
+const SESSION_TTL = process.env.JWT_TTL || '24h'; // duraciÃ³n del JWT de sesiÃ³n (login)
 
-// Para este MVP usaremos memoria local solo para evitar reuso de tokens efÃƒÂ­meros
+// Para este MVP usaremos memoria local solo para evitar reuso de tokens efÃ­meros
 const ROLE_TTL = {
   student: process.env.JWT_TTL_STUDENT || '15m',
   teacher: process.env.JWT_TTL_TEACHER || '1h',
@@ -109,6 +109,11 @@ function maskEmail(email) {
 function generateOtp(length = 6) {
   const max = 10 ** Math.max(1, length);
   return randomInt(0, max).toString().padStart(length, '0');
+}
+
+function hashOtp(otp) {
+  if (typeof otp !== 'string' || !otp) return null;
+  return createHash('sha256').update(otp).digest('hex');
 }
 
 function isStrongPassword(password) {
@@ -182,7 +187,7 @@ let publicJwk;
   // Initialize DB schema and seed demo users if empty
   try {
     await ensureSchema();
-    // Ya no sembramos usuarios demo aquÃƒÂ­; la BD productiva tiene sus registros.
+    // Ya no sembramos usuarios demo aquÃ­; la BD productiva tiene sus registros.
     // Si necesitas poblar en desarrollo, usa seedUsersIfEmpty() en scripts separados.
     await seedUsersIfEmpty();
   } catch (e) {
@@ -190,7 +195,7 @@ let publicJwk;
   }
 })();
 
-// Endpoint para publicar la clave pÃƒÂºblica (ÃƒÂºtil para verificadores)
+// Endpoint para publicar la clave pÃºblica (Ãºtil para verificadores)
 app.get("/.well-known/jwks.json", (req, res) => {
   res.json({ keys: [publicJwk] });
 });
@@ -240,12 +245,12 @@ app.get('/__debug', async (req, res) => {
   res.json(out);
 });
 
-// Endpoint de login bÃƒÂ¡sico
+// Endpoint de login bÃ¡sico
 app.post("/auth/login", async (req, res) => {
   try {
     const { email, password, code } = req.body || {};
     if ((!email && !code) || !password)
-      return res.status(400).json({ error: "missing_credentials", message: "Falta email/cÃƒÂ³digo o contraseÃƒÂ±a" });
+      return res.status(400).json({ error: "missing_credentials", message: "Falta email/cÃ³digo o contraseÃ±a" });
 
     let user;
     if (email) {
@@ -258,9 +263,9 @@ app.post("/auth/login", async (req, res) => {
       user = await getUserByCode(code);
     }
 
-    if (!user) return res.status(401).json({ error: "invalid_credentials", message: "Usuario o contraseÃƒÂ±a incorrectos" });
+    if (!user) return res.status(401).json({ error: "invalid_credentials", message: "Usuario o contraseÃ±a incorrectos" });
     const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) return res.status(401).json({ error: "invalid_credentials", message: "Usuario o contraseÃƒÂ±a incorrectos" });
+    if (!ok) return res.status(401).json({ error: "invalid_credentials", message: "Usuario o contraseÃ±a incorrectos" });
 
     // Auto-renew student expiry to 6 months if missing or expired
     try {
@@ -374,21 +379,74 @@ app.post("/auth/password-reset/request", async (req, res) => {
 
 app.post("/auth/password-reset/confirm", async (req, res) => {
   try {
-    const { email, code, otp, newPassword, dryRun } = req.body || {};
+    const { email, code, otp, newPassword, dryRun, preflightToken } = req.body || {};
     const rawEmail = typeof email === "string" ? email.trim() : "";
     const rawCode = typeof code === "string" ? code.trim() : "";
     const identifier = rawEmail || rawCode;
     const otpValue = typeof otp === "string" ? otp.trim() : String(otp ?? "").trim();
     const passwordValue = typeof newPassword === "string" ? newPassword.trim() : "";
 
-    if (!identifier || !otpValue || (!dryRun && !passwordValue)) {
+    // Final step: use preflightToken to update password
+    if (preflightToken && passwordValue) {
+      if (!isStrongPassword(passwordValue)) {
+        return res.status(400).json({
+          error: "weak_password",
+          message: "La contrasena debe tener minimo 8 caracteres, con mayusculas, minusculas, numero y simbolo.",
+        });
+      }
+
+      let preflightPayload;
+      try {
+        const { payload } = await jwtVerify(preflightToken, new TextEncoder().encode(JWT_SECRET), {
+          issuer: "api_carnet",
+          audience: "password_reset",
+        });
+        preflightPayload = payload;
+      } catch (e) {
+        return res.status(400).json({ error: "invalid_preflight_token", message: "El token de confirmacion es invalido o ha expirado." });
+      }
+
+      if (preflightPayload.scope !== 'password_reset_preflight') {
+        return res.status(400).json({ error: "invalid_scope", message: "El token no es valido para esta operacion." });
+      }
+
+      // Security check: ensure the OTP provided now matches the hash in the preflight token
+      if (!otpValue || !preflightPayload.otp_hash || hashOtp(otpValue) !== preflightPayload.otp_hash) {
+        return res.status(400).json({ error: "otp_mismatch", message: "El codigo OTP no coincide con el verificado." });
+      }
+
+      const supabaseUserId = preflightPayload.spid;
+      const userCode = preflightPayload.sub;
+      if (!supabaseUserId || !userCode) {
+        return res.status(400).json({ error: "invalid_preflight_payload", message: "Faltan datos en el token de confirmacion." });
+      }
+
+      const sb = supabaseAdmin();
+      const { error: updateError } = await sb.auth.admin.updateUserById(supabaseUserId, {
+        password: passwordValue,
+      });
+
+      if (updateError) {
+        console.error('[password-reset][confirm][admin_update_error]', updateError);
+        return res.status(500).json({ error: 'update_failed', message: 'No se pudo actualizar la contrasena en Supabase.' });
+      }
+
+      const newHash = await bcrypt.hash(passwordValue, 10);
+      await updateUserPasswordHash(userCode, newHash);
+      await deleteRefreshTokensForUser(userCode);
+
+      return res.json({ ok: true });
+    }
+
+    // Preflight or legacy flow
+    if (!identifier || !otpValue) {
       return res.status(400).json({
         error: "missing_params",
         message: "Faltan datos para restablecer la contrasena.",
       });
     }
 
-    if (!dryRun && !isStrongPassword(passwordValue)) {
+    if (passwordValue && !isStrongPassword(passwordValue)) {
       return res.status(400).json({
         error: "weak_password",
         message: "La contrasena debe tener minimo 8 caracteres, con mayusculas, minusculas, numero y simbolo.",
@@ -396,17 +454,11 @@ app.post("/auth/password-reset/confirm", async (req, res) => {
     }
 
     let user = null;
-    if (rawEmail) {
-      user = await getUserByEmail(rawEmail);
-    } else if (rawCode) {
-      user = await getUserByCode(rawCode);
-    }
+    if (rawEmail) user = await getUserByEmail(rawEmail);
+    else if (rawCode) user = await getUserByCode(rawCode);
 
     if (!user) {
-      return res.status(400).json({
-        error: "invalid_request",
-        message: "Solicitud invalida.",
-      });
+      return res.status(400).json({ error: "invalid_request", message: "Solicitud invalida." });
     }
 
     const sb = supabaseAdmin();
@@ -415,36 +467,63 @@ app.post("/auth/password-reset/confirm", async (req, res) => {
       token: otpValue,
       type: 'recovery',
     });
+
     if (verificationError || !verificationData?.user) {
-      if (verificationError) {
-        console.error('[password-reset][confirm][otp_error]', verificationError);
-      }
-      return res
-          .status(400)
-          .json({ error: 'otp_invalid', message: 'Codigo incorrecto o vencido.' });
+      if (verificationError) console.error('[password-reset][confirm][otp_error]', verificationError);
+      return res.status(400).json({ error: 'otp_invalid', message: 'Codigo incorrecto o vencido.' });
     }
 
+    // Preflight check successful, issue a short-lived JWT
     if (dryRun) {
-      try {
-        await sb.auth.signOut();
-      } catch (_) {}
-      return res.json({ ok: true, dryRun: true });
+      const otpHash = hashOtp(otpValue);
+      const preflightToken = await new SignJWT({
+          scope: 'password_reset_preflight',
+          otp_hash: otpHash,
+          spid: verificationData.user.id, // Supabase User ID
+        })
+        .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+        .setIssuedAt()
+        .setExpirationTime('5m')
+        .setIssuer("api_carnet")
+        .setAudience("password_reset")
+        .setSubject(user.code)
+        .sign(new TextEncoder().encode(JWT_SECRET));
+
+      try { await sb.auth.signOut(); } catch (_) {}
+      return res.json({ ok: true, dryRun: true, preflightToken });
     }
 
-    const newHash = await bcrypt.hash(passwordValue, 10);
-    await updateUserPasswordHash(user.code, newHash);
-    await deleteRefreshTokensForUser(user.code);
+    // Legacy flow: update password directly
+    if (passwordValue) {
+      const { error: updateError } = await sb.auth.updateUser({
+        password: passwordValue,
+      });
 
-    try {
-      await sb.auth.signOut();
-    } catch (_) {}
+      if (updateError) {
+        console.error('[password-reset][confirm][update_error]', updateError);
+        try { await sb.auth.signOut(); } catch (_) {}
+        return res.status(400).json({
+          error: 'update_failed',
+          message: 'No se pudo actualizar la contrasena. El codigo OTP es de un solo uso y puede haber expirado o haber sido usado ya.',
+        });
+      }
 
-    return res.json({ ok: true });
+      const newHash = await bcrypt.hash(passwordValue, 10);
+      await updateUserPasswordHash(user.code, newHash);
+      await deleteRefreshTokensForUser(user.code);
+
+      try { await sb.auth.signOut(); } catch (_) {}
+      return res.json({ ok: true });
+    }
+
+    // Should not be reached if params are validated correctly
+    return res.status(400).json({ error: 'invalid_request_state' });
+
   } catch (err) {
     console.error("[password-reset][confirm]", err);
     return res.status(500).json({
       error: "reset_confirm_failed",
-      message: "No se pudo actualizar la contrasena. Intentalo mas tarde.",
+      message: "No se pudo procesar la solicitud. Intentalo mas tarde.",
     });
   }
 });
@@ -549,7 +628,7 @@ app.post("/auth/register", async (req, res) => {
     res.json({ success: true, ephemeralCode, user: { ...newUser, photoUrl: signedPhoto || newUser.photoUrl } });
   } catch (e) {
     console.error('registration_error', e);
-    res.status(500).json({ error: "registration_failed", message: 'No se pudo registrar. Intenta mÃƒÂ¡s tarde.' });
+    res.status(500).json({ error: "registration_failed", message: 'No se pudo registrar. Intenta mÃ¡s tarde.' });
   }
 });
 
@@ -567,7 +646,7 @@ app.get("/users/me/photo-url", requireAuth(), async (req, res) => {
   }
 });
 
-// Reemplazar la foto del usuario autenticado (acepta data URL), comprime y sobreescribe avatar ÃƒÂºnico
+// Reemplazar la foto del usuario autenticado (acepta data URL), comprime y sobreescribe avatar Ãºnico
 app.put("/users/me/photo", requireAuth(), async (req, res) => {
   try {
     const { photo } = req.body || {};
@@ -625,7 +704,7 @@ function requireAuth(role) {
   };
 }
 
-// Endpoint que emite un QR efÃƒÂ­mero
+// Endpoint que emite un QR efÃ­mero
 app.post("/issue-ephemeral", requireAuth("student"), async (req, res) => {
   try {
     const { code } = req.user;
@@ -655,7 +734,7 @@ app.post("/issue-ephemeral", requireAuth("student"), async (req, res) => {
     const { passwordHash, ...student } = found || {};
     // Include a signed photo URL to avoid an extra request from the client
     let photoSigned = null;
-    const photoTtl = 300; // 5 minutes
+    const photoTtl = 300; // 5 minutos
     try {
       if (student?.photoUrl) photoSigned = await createSignedAvatarUrl(student.photoUrl, photoTtl);
     } catch {}
@@ -733,7 +812,7 @@ app.post("/verify", async (req, res) => {
 
 // --- Flujo Profesor: sesiones y asistencia ---
 
-// Profesor inicia una sesiÃƒÂ³n de clase y obtiene un token para QR que los alumnos escanean
+// Profesor inicia una sesiÃ³n de clase y obtiene un token para QR que los alumnos escanean
 app.post("/prof/start-session", requireAuth("teacher"), async (req, res) => {
   try {
     const teacherCode = req.user.code;
@@ -747,7 +826,7 @@ app.post("/prof/start-session", requireAuth("teacher"), async (req, res) => {
     // Persist session in DB
     await createSessionWithId(sessionId, teacherCode, now, exp, offeringId);
 
-    // Token firmado con HS256 (clave compartida del API) para que el alumno lo envÃƒÂ­e en check-in
+    // Token firmado con HS256 (clave compartida del API) para que el alumno lo envÃ­e en check-in
     const sessionToken = await new SignJWT({ scope: "attendance", session_id: sessionId })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setIssuedAt(now)
@@ -770,7 +849,7 @@ app.post("/prof/start-session", requireAuth("teacher"), async (req, res) => {
   }
 });
 
-// Profesor finaliza una sesiÃƒÂ³n (deja de aceptar check-ins, pero permite consultar lista)
+// Profesor finaliza una sesiÃ³n (deja de aceptar check-ins, pero permite consultar lista)
 app.post("/prof/end-session", requireAuth("teacher"), async (req, res) => {
   const sessionId = req.body?.sessionId || req.query?.id;
   if (!sessionId) return res.status(400).json({ error: "missing_session_id" });
@@ -783,7 +862,7 @@ app.post("/prof/end-session", requireAuth("teacher"), async (req, res) => {
   return res.json({ ok: true, session: updated, attendees });
 });
 
-// Alumno hace check-in a la sesiÃƒÂ³n escaneada (necesita estar logueado como student)
+// Alumno hace check-in a la sesiÃ³n escaneada (necesita estar logueado como student)
 app.post("/attendance/check-in", requireAuth("student"), async (req, res) => {
   try {
     const sessionToken = req.body?.sessionToken || req.query?.t;
@@ -814,7 +893,7 @@ app.post("/attendance/check-in", requireAuth("student"), async (req, res) => {
       return res.json({ ok: true, already: true, at: existing.at, sessionId });
     }
 
-    // Buscar datos del estudiante para devolver informaciÃƒÂ³n ÃƒÂºtil
+    // Buscar datos del estudiante para devolver informaciÃ³n Ãºtil
     const newEntry = await addAttendance(sessionId, req.user.code, now);
     const entry = newEntry;
 
@@ -824,7 +903,7 @@ app.post("/attendance/check-in", requireAuth("student"), async (req, res) => {
   }
 });
 
-// Profesor consulta la asistencia de una sesiÃƒÂ³n
+// Profesor consulta la asistencia de una sesiÃ³n
 app.get("/prof/session/:id", requireAuth("teacher"), async (req, res) => {
   const sessionId = req.params.id;
   const session = await getSession(sessionId);
@@ -833,7 +912,7 @@ app.get("/prof/session/:id", requireAuth("teacher"), async (req, res) => {
   return res.json({ session, attendees });
 });
 
-// AÃƒÂ±adir asistencia manual por profesor
+// AÃ±adir asistencia manual por profesor
 app.post('/prof/attendance/add', requireAuth('teacher'), async (req, res) => {
   try {
     const { sessionId, code, email } = req.body || {};
@@ -841,7 +920,7 @@ app.post('/prof/attendance/add', requireAuth('teacher'), async (req, res) => {
     const session = await getSession(sessionId);
     if (!session) return res.status(404).json({ error: 'session_not_found' });
     if (session.teacherCode !== req.user.code) return res.status(403).json({ error: 'forbidden' });
-    // Resolver estudiante por cÃƒÂ³digo o email
+    // Resolver estudiante por cÃ³digo o email
     let student = null;
     if (code) student = await getUserByCode(code);
     if (!student && email) student = await getUserByEmail(email);
@@ -853,7 +932,7 @@ app.post('/prof/attendance/add', requireAuth('teacher'), async (req, res) => {
   }
 });
 
-// Eliminar asistencia de un estudiante en la sesiÃƒÂ³n
+// Eliminar asistencia de un estudiante en la sesiÃ³n
 app.delete('/prof/attendance', requireAuth('teacher'), async (req, res) => {
   try {
     const { sessionId, studentCode } = req.body || {};
@@ -868,7 +947,7 @@ app.delete('/prof/attendance', requireAuth('teacher'), async (req, res) => {
   }
 });
 
-// Autocomplete de estudiantes (email/name). SÃƒÂ³lo para docente
+// Autocomplete de estudiantes (email/name). SÃ³lo para docente
 app.get('/prof/students/search', requireAuth('teacher'), async (req, res) => {
   try {
     const q = String(req.query?.q || '').trim();
@@ -881,7 +960,5 @@ app.get('/prof/students/search', requireAuth('teacher'), async (req, res) => {
 });
 
 app.listen(PORT, HOST, () => {
-  console.log("API QR efÃƒÂ­mero escuchando en " + BASE_URL);
+  console.log("API QR efÃ­mero escuchando en " + BASE_URL);
 });
-
-
