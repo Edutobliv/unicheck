@@ -552,6 +552,9 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
   String? _otpValue;
   bool _newPasswordVisible = false;
   bool _confirmPasswordVisible = false;
+  int _resends = 0;
+  int _cooldownLeft = 0;
+  Timer? _cooldownTimer;
 
   @override
   void initState() {
@@ -564,6 +567,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
 
   @override
   void dispose() {
+    _cooldownTimer?.cancel();
     _identifierCtrl.dispose();
     _otpCtrl.dispose();
     _passwordCtrl.dispose();
@@ -572,6 +576,10 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
   }
 
   Future<void> _requestReset({bool resend = false}) async {
+    if (resend) {
+      if (_resends >= 3) return;
+      if (_cooldownLeft > 0) return;
+    }
     final input = resend
         ? (_identifierValue ?? '')
         : _identifierCtrl.text.trim();
@@ -616,6 +624,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
           _identifierIsEmail = isEmail;
           _maskedEmail = data['maskedEmail']?.toString();
           _debugOtp = data['debugOtp']?.toString();
+          _otpError = null;
           _otpCtrl.clear();
           _passwordCtrl.clear();
           _confirmCtrl.clear();
@@ -625,6 +634,24 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
           _step = _ForgotPasswordStep.otp;
           if (!resend) {
             _globalError = null;
+          }
+          if (resend) {
+            _resends += 1;
+            _cooldownLeft = 30;
+            _cooldownTimer?.cancel();
+            _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+              if (!mounted) {
+                t.cancel();
+                return;
+              }
+              setState(() {
+                if (_cooldownLeft > 0) {
+                  _cooldownLeft -= 1;
+                } else {
+                  t.cancel();
+                }
+              });
+            });
           }
         });
       } else {
@@ -657,21 +684,13 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
     }
   }
 
-  void _goBackToIdentifier() {
-    setState(() {
-      _step = _ForgotPasswordStep.identifier;
-      _otpError = null;
-      _passwordError = null;
-      _confirmError = null;
-      _otpValue = null;
-    });
-  }
+  
 
   void _handleOtpContinue() {
     final input = _otpCtrl.text.trim();
-    if (!RegExp(r'^\d{6}$').hasMatch(input)) {
+    if (input.isEmpty) {
       setState(() {
-        _otpError = 'Ingresa el codigo de 6 digitos.';
+        _otpError = 'Ingresa el codigo recibido.';
       });
       return;
     }
@@ -877,9 +896,9 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
                 const SizedBox(height: BrandSpacing.sm),
                 Text(
                   _step == _ForgotPasswordStep.identifier
-                      ? 'Ingresa tu correo institucional o codigo para enviar un codigo de verificacion.'
+                      ? 'Ingresa tu correo institucional o codigo para enviar el enlace/codigo de recuperacion.'
                       : _step == _ForgotPasswordStep.otp
-                      ? 'Ingresa el codigo de 6 digitos enviado a tu correo.'
+                      ? 'Ingresa el codigo/token enviado a tu correo.'
                       : 'Define una nueva contrasena para tu cuenta.',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
@@ -972,13 +991,11 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
         TextField(
           controller: _otpCtrl,
           decoration: InputDecoration(
-            labelText: 'Codigo de 6 digitos',
+            labelText: 'Codigo o token',
             prefixIcon: const Icon(Icons.pin_outlined),
             errorText: _otpError,
-            counterText: '',
           ),
-          keyboardType: TextInputType.number,
-          maxLength: 6,
+          keyboardType: TextInputType.text,
           enabled: !_loading,
           onSubmitted: (_) => _loading ? null : _handleOtpContinue(),
         ),
@@ -997,13 +1014,19 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            TextButton(
-              onPressed: _loading ? null : _goBackToIdentifier,
-              child: const Text('Cambiar correo'),
+            Text(
+              _resends >= 3
+                  ? 'Reenvios agotados'
+                  : _cooldownLeft > 0
+                  ? 'Reenviar en ${_cooldownLeft}s'
+                  : 'Puedes reenviar (/3)',
+              style: theme.textTheme.bodySmall,
             ),
             TextButton(
-              onPressed: _loading ? null : () => _requestReset(resend: true),
-              child: const Text('Reenviar codigo'),
+              onPressed: _loading || _resends >= 3 || _cooldownLeft > 0
+                  ? null
+                  : () => _requestReset(resend: true),
+              child: const Text('No recibi el codigo'),
             ),
           ],
         ),

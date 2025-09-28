@@ -374,21 +374,21 @@ app.post("/auth/password-reset/request", async (req, res) => {
 
 app.post("/auth/password-reset/confirm", async (req, res) => {
   try {
-    const { email, code, otp, newPassword } = req.body || {};
+    const { email, code, otp, newPassword, dryRun } = req.body || {};
     const rawEmail = typeof email === "string" ? email.trim() : "";
     const rawCode = typeof code === "string" ? code.trim() : "";
     const identifier = rawEmail || rawCode;
     const otpValue = typeof otp === "string" ? otp.trim() : String(otp ?? "").trim();
     const passwordValue = typeof newPassword === "string" ? newPassword.trim() : "";
 
-    if (!identifier || !otpValue || !passwordValue) {
+    if (!identifier || !otpValue || (!dryRun && !passwordValue)) {
       return res.status(400).json({
         error: "missing_params",
         message: "Faltan datos para restablecer la contrasena.",
       });
     }
 
-    if (!isStrongPassword(passwordValue)) {
+    if (!dryRun && !isStrongPassword(passwordValue)) {
       return res.status(400).json({
         error: "weak_password",
         message: "La contrasena debe tener minimo 8 caracteres, con mayusculas, minusculas, numero y simbolo.",
@@ -416,6 +416,10 @@ app.post("/auth/password-reset/confirm", async (req, res) => {
       await sb.auth.verifyOtp({ email: user.email, token: otpValue, type: 'recovery' });
     } catch (e) {
       return res.status(400).json({ error: 'otp_invalid', message: 'Codigo incorrecto o vencido.' });
+    }
+
+    if (dryRun) {
+      return res.json({ ok: true, dryRun: true });
     }
 
     const newHash = await bcrypt.hash(passwordValue, 10);
