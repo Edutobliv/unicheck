@@ -53,6 +53,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -67,6 +68,28 @@ flutter:
   assets:
     - assets/img/logo_piloto.png
     - assets/img/foto_carnet.png
+
+# App icon configuration (run: `dart run flutter_launcher_icons`)
+flutter_launcher_icons:
+  image_path: assets/app_icon.png
+  image_path_ios: assets/app_icon_ios.png
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  adaptive_icon_foreground: assets/app_icon_fg.png
+  adaptive_icon_background: "#FFFFFF"
+  web:
+    generate: true
+    image_path: assets/app_icon.png
+    background_color: "#ffffff"
+    theme_color: "#0175C2"
+  macos:
+    generate: true
+    image_path: assets/app_icon.png
+  windows:
+    generate: true
+    image_path: assets/app_icon.png
+    icon_size: 48
 
   # To add assets to your application, add an assets section, like this:
   # assets:

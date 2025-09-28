@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "proyecto_carnet" "\0"
+            VALUE "FileDescription", "Unicheck" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "proyecto_carnet" "\0"
+            VALUE "InternalName", "Unicheck" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "proyecto_carnet.exe" "\0"
-            VALUE "ProductName", "proyecto_carnet" "\0"
+            VALUE "OriginalFilename", "Unicheck.exe" "\0"
+            VALUE "ProductName", "Unicheck" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
