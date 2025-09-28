@@ -1,480 +1,240 @@
-# Unicheck — Carnet Digital y Asistencia (Flutter + Node + Supabase)
+# Unicheck - Carnet Digital y Asistencia
 
-Aplicación móvil (Flutter) y API (Node.js/Express) para:
+[![Flutter](https://img.shields.io/badge/Frontend-Flutter-02569B?logo=flutter)](https://flutter.dev)
+[![Node.js](https://img.shields.io/badge/Backend-Node.js-339933?logo=nodedotjs)](https://nodejs.org)
+[![Express.js](https://img.shields.io/badge/Framework-Express.js-000000?logo=express)](https://expressjs.com)
+[![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791?logo=postgresql)](https://www.postgresql.org)
+[![Supabase](https://img.shields.io/badge/PaaS-Supabase-3FCF8E?logo=supabase)](https://supabase.com)
 
-- Validación de credenciales del estudiante en portería (acceso al campus) mediante QR efímero.
-- Control de asistencia a clases para docentes (creación de sesiones, check‑in de estudiantes y reportes).
-
-El backend usa PostgreSQL (Supabase) y Supabase Storage para los avatares. Está preparado para desplegarse en Render con el blueprint `render.yaml`.
-
----
-
-**Contenido**
-
-- Arquitectura y requisitos
-- Configuración y ejecución local (API + App)
-- Despliegue en Render (backend)
-- Configuración Supabase (DB + Storage)
-- Esquema de base de datos y SQL útil (vistas/trigger)
-- Endpoints principales del API
-- Datos de prueba
-- Depuración y resolución de problemas
+**Unicheck** es una solución integral para la gestión de identidad y asistencia en entornos educativos. Consiste en una aplicación móvil multiplataforma (Flutter) para estudiantes, docentes y personal de seguridad, y una API robusta (Node.js/Express) que gestiona la lógica de negocio.
 
 ---
 
-## Arquitectura
+## ✨ Características Principales
 
-- Frontend: Flutter (Android/iOS/Web/Escritorio). Base de API configurable por `--dart-define=API_BASE_URL` (por defecto apunta al servicio de Render).
-- Backend: Node.js (ESM) con Express. JWT HS256 para sesiones de usuario y EdDSA (Ed25519) efímero para QR de acceso.
-- Base de datos: PostgreSQL (Supabase). Se crean tablas para `users`, `class_sessions`, `attendance`, `used_jti`, `gates`, `access_events`.
-- Almacenamiento: Supabase Storage (bucket privado `avatars`) para fotos; el API genera URLs firmadas temporales.
+-   **Carnet Digital con QR Efímero**: Los estudiantes pueden generar un carnet digital con un código QR que expira a los pocos segundos, garantizando que no pueda ser reutilizado o falsificado.
+-   **Validación de Acceso en Portería**: El personal de seguridad puede escanear los QR para validar el acceso al campus, registrando cada evento (entrada/salida).
+-   **Gestión de Asistencia a Clases**:
+    -   **Docentes**: Pueden iniciar y finalizar sesiones de clase, generando un QR único para cada sesión.
+    -   **Estudiantes**: Escanean el QR de la clase para registrar su asistencia.
+    -   **Reportes**: Los docentes pueden ver reportes de asistencia en tiempo real y consultar el historial.
+-   **Roles de Usuario**: Sistema de permisos diferenciado para `student`, `teacher` y `porter`.
+-   **Gestión de Perfil**: Los usuarios pueden subir y actualizar su foto de perfil, almacenada de forma segura.
 
-## Requisitos
+---
 
-- Node.js 20+
-- npm 9+
-- Flutter estable (3.x+)
-- Proyecto Supabase (URL y `service_role`)
-- (Opcional) Docker para Postgres local
+## 🛠️ Tech Stack
 
-## Ejecución Local (Backend)
+| Componente | Tecnología | Descripción |
+| :--- | :--- | :--- |
+| **Frontend** | Flutter | Aplicación móvil para Android, iOS y Web. |
+| **Backend** | Node.js, Express.js | API RESTful para toda la lógica de negocio. |
+| **Base de Datos** | PostgreSQL | Alojada en Supabase para persistencia de datos. |
+| **Autenticación** | JWT (HS256 & EdDSA) | Tokens de sesión y tokens efímeros para los QR. |
+| **Almacenamiento** | Supabase Storage | Bucket privado para las fotos de perfil de los usuarios. |
+| **Despliegue** | Render | Configuración "Infrastructure as Code" con `render.yaml`. |
 
-```bash
-cd api_carnet
-npm install
+---
 
-# Configura tu entorno local copiando el ejemplo
-cp .env.example .env
+## 📁 Estructura del Proyecto
 
-# Edita .env con tus valores (ver sección Variables de entorno)
-
-# Arranca en desarrollo
-npm run dev  # usa nodemon
-# ó en modo producción local
-npm start
+```
+.
+├── api_carnet/         # Backend en Node.js (Express)
+│   ├── index.js        # Punto de entrada del servidor
+│   ├── openapi.yaml    # Especificación de la API
+│   ├── package.json    # Dependencias y scripts
+│   └── ...
+├── lib/                # Código fuente de la aplicación Flutter
+│   ├── main.dart       # Punto de entrada de la app
+│   ├── login_page.dart # Lógica de UI para las páginas
+│   └── ...
+├── assets/             # Imágenes y otros recursos estáticos
+├── pubspec.yaml        # Dependencias y configuración de Flutter
+├── render.yaml         # Blueprint para despliegue en Render
+└── README.md           # Este archivo
 ```
 
-Variables de entorno clave (`api_carnet/.env` o Render):
+---
 
-- `DATABASE_URL` (recomendado Pooler de Supabase):
-  `postgresql://<user>.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres?sslmode=require&options=project%3D<ref>`
-- `JWT_SECRET`: secreto fuerte para firmar tokens de sesión.
-- `JWT_TTL` (opcional): duración genérica del token de sesión (fallback, por defecto `12h`).
-- `JWT_TTL_STUDENT` (opcional, default `30m`)
-- `JWT_TTL_TEACHER` (opcional, default `1h`)
-- `JWT_TTL_PORTER` (opcional, default `1h`)
-- `SUPABASE_URL`: `https://<ref>.supabase.co`.
-- `SUPABASE_SERVICE_ROLE`: clave `service_role` del proyecto (mantener en secreto; sólo servidor).
-- `AVATAR_BUCKET` (opcional): nombre de bucket privado (default `avatars`).
-- `PUBLIC_BASE_URL` (opcional): URL pública del API (si no, Render usará `RENDER_EXTERNAL_URL`).
-- `ALLOWED_EMAIL_DOMAINS` (opcional): restringir correos de registro (coma‑separado).
-- `DEBUG_KEY` (opcional, sólo staging): habilita `GET /__debug`.
+## 🚀 Puesta en Marcha
 
-## Despliegue en Render
+### Requisitos Previos
 
-Este repositorio trae un `render.yaml` para Blueprint Deploy.
+-   **Node.js**: Versión `20.x` o superior.
+-   **Flutter**: Versión `3.x` o superior.
+-   **Supabase**: Un proyecto creado para la base de datos y el almacenamiento.
+-   **(Opcional) Docker**: Para una base de datos PostgreSQL local.
 
-1) Conecta el repo a Render y crea “New → Blueprint”.
-2) Render creará el servicio web apuntando a `api_carnet/`.
-3) Configura Secrets en el servicio:
-   - `DATABASE_URL`
-   - `JWT_SECRET`
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_ROLE`
-   - `AVATAR_BUCKET` (opcional)
-   - `PUBLIC_BASE_URL` (opcional)
-   - `DEBUG_KEY` (temporal para `/__debug`)
-4) Deploy. Healthcheck: `GET /health` → `{ ok: true }`.
+### 1. Configuración del Backend (`api_carnet`)
 
-Notas de Render:
+1.  **Navega al directorio de la API:**
+    ```bash
+    cd api_carnet
+    ```
 
-- El servidor escucha en `0.0.0.0` y auto‑detecta la URL pública.
-- Si tu Postgres rechaza TLS o SNI, revisa que `sslmode=require` esté en `DATABASE_URL`.
+2.  **Instala las dependencias:**
+    ```bash
+    npm install
+    ```
 
-## Configuración de Supabase
+3.  **Configura las variables de entorno:**
+    Copia el archivo de ejemplo y edítalo con tus credenciales de Supabase y secretos.
+    ```bash
+    cp .env.example .env
+    ```
+    **Variables clave en `.env`:**
+    -   `DATABASE_URL`: La URL de conexión a tu base de datos PostgreSQL (se recomienda el Pooler de Supabase).
+    -   `JWT_SECRET`: Un secreto robusto para firmar los tokens de sesión.
+    -   `SUPABASE_URL`: La URL de tu proyecto Supabase.
+    -   `SUPABASE_SERVICE_ROLE`: La clave de servicio (`service_role`) de Supabase.
 
-- Base de datos: ejecuta las migraciones recomendadas (ver sección SQL). 
-- Storage: crea un bucket privado `avatars`. No necesitas políticas públicas; el API genera URLs firmadas temporales.
+4.  **Inicia el servidor en modo desarrollo:**
+    El servidor se reiniciará automáticamente con cada cambio.
+    ```bash
+    npm run dev
+    ```
+    La API estará disponible en `http://localhost:3000`.
 
-## App Flutter
+### 2. Configuración del Frontend (Flutter App)
 
-```bash
-flutter pub get
+1.  **Instala las dependencias de Flutter** desde el directorio raíz del proyecto:
+    ```bash
+    flutter pub get
+    ```
 
-# Por defecto apunta al API desplegado en Render
-flutter run
+2.  **Ejecuta la aplicación:**
+    Por defecto, la app apunta a la API desplegada en Render. Para apuntar a tu backend local, usa la variable `--dart-define`.
 
-# Para apuntar a otra API (ej. local):
-flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000   # Emulador Android
-```
+    -   **Para emulador de Android:**
+        ```bash
+        flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000
+        ```
+    -   **Para simulador de iOS o web:**
+        ```bash
+        flutter run --dart-define=API_BASE_URL=http://localhost:3000
+        ```
+    -   **Para un dispositivo físico:**
+        Usa la dirección IP de tu máquina en la red local.
+        ```bash
+        flutter run --dart-define=API_BASE_URL=http://<TU_IP_LAN>:3000
+        ```
 
-### iOS (iPhone)
+---
 
-Requisitos y notas:
+## 📖 Documentación de la API
 
-- Necesitas macOS con Xcode instalado (no se puede compilar iOS desde Windows/Linux).
-- CocoaPods se instala automáticamente con Xcode; Flutter generará los Pods al compilar/ejecutar.
-- El mínimo de iOS objetivo es 13.0 (configurado por Flutter).
+La API expone su documentación a través de Swagger UI. Una vez que el backend esté corriendo, puedes acceder a ella en:
+**`http://localhost:3000/docs`**
 
-Pasos básicos:
+A continuación, un resumen de los endpoints disponibles.
 
-```bash
-# En macOS
-flutter pub get
+### System
 
-# Simulador iOS (abre uno desde Xcode o usa "open -a Simulator")
-flutter run -d ios
+| Método | Endpoint | Descripción |
+| :--- | :--- | :--- |
+| `GET` | `/health` | Verifica el estado de salud de la API. |
+| `GET` | `/.well-known/jwks.json` | Expone la clave pública para verificar los QR efímeros. |
 
-# O compila el proyecto iOS y ábrelo en Xcode para firmar/publicar
-flutter build ios
-open ios/Runner.xcworkspace
-```
+### Auth
 
-Permisos ya configurados en `ios/Runner/Info.plist`:
+| Método | Endpoint | Rol Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/auth/register` | Público | Registra un nuevo usuario. |
+| `POST` | `/auth/login` | Público | Inicia sesión y devuelve un token JWT. |
+| `POST` | `/auth/refresh` | Público | Refresca un token de sesión expirado. |
 
-- `NSCameraUsageDescription`: requerido por el escáner de QR/cámara.
-- `NSPhotoLibraryUsageDescription`: requerido para seleccionar foto desde galería.
-- `NSPhotoLibraryAddUsageDescription`: por si decides guardar/exportar imágenes desde la app.
+### Users
 
-Backend local en iOS:
+| Método | Endpoint | Rol Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/users/me/photo-url` | `student`, `teacher`, `porter` | Obtiene una URL firmada y temporal para la foto de perfil. |
+| `PUT` | `/users/me/photo` | `student`, `teacher`, `porter` | Sube o actualiza la foto de perfil (en formato Data URL). |
+| `DELETE`| `/users/me/photo` | `student`, `teacher`, `porter` | Elimina la foto de perfil del usuario. |
 
-- Simulador iOS puede acceder a tu máquina host vía `http://localhost:3000`.
-- Dispositivo físico necesita tu IP de LAN, por ejemplo: `http://192.168.1.50:3000`.
-- Ejemplos:
-  - Simulador: `flutter run --dart-define=API_BASE_URL=http://localhost:3000`
-  - Dispositivo: `flutter run --dart-define=API_BASE_URL=http://<TU-IP-LAN>:3000`
+### QR & Verify
 
-App Transport Security (ATS):
+| Método | Endpoint | Rol Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/issue-ephemeral` | `student` | Emite un nuevo carnet digital con QR efímero. |
+| `POST` | `/verify` | Público | Verifica la validez de un token de QR. Puede ser usado por un `porter` para registrar el evento. |
 
-- La API por defecto usa HTTPS, así que no necesitas cambios.
-- Si usas HTTP en desarrollo, añade una excepción ATS SOLO para desarrollo en `ios/Runner/Info.plist`:
+### Professor & Attendance
 
-```xml
-<key>NSAppTransportSecurity</key>
-<dict>
-  <key>NSAllowsArbitraryLoads</key><true/>
-</dict>
-```
+| Método | Endpoint | Rol Requerido | Descripción |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/prof/start-session` | `teacher` | Inicia una nueva sesión de clase para tomar asistencia. |
+| `POST` | `/prof/end-session` | `teacher` | Finaliza una sesión de clase y obtiene el reporte. |
+| `GET` | `/prof/session/{id}` | `teacher` | Obtiene los detalles y asistentes de una sesión específica. |
+| `POST` | `/attendance/check-in` | `student` | Registra la asistencia de un estudiante a una clase. |
+| `POST` | `/prof/attendance/add` | `teacher` | Añade manualmente a un estudiante a una sesión de asistencia. |
+| `DELETE`| `/prof/attendance` | `teacher` | Elimina un registro de asistencia. |
+| `GET` | `/prof/students/search`| `teacher` | Busca estudiantes por nombre o código. |
 
-Recomendado: en lugar de permitir todo, crea una excepción por dominio si tu backend HTTP está en una IP o host concreto.
+---
 
-Optimizaciones implementadas:
+## ☁️ Despliegue en Render
 
-- El carnet obtiene una URL firmada del avatar directamente en `POST /issue-ephemeral` y la cachea con su expiración para no re‑pedirla hasta que venza.
+Este repositorio está configurado para un despliegue automático en [Render](https://render.com/) usando el archivo `render.yaml`.
 
-## Esquema y SQL útil
+1.  Crea una cuenta en Render y conecta este repositorio.
+2.  Crea un nuevo servicio de tipo **Blueprint**. Render detectará `render.yaml` automáticamente.
+3.  Configura las **Variables de Entorno** en el dashboard de Render con las mismas credenciales que usaste en tu archivo `.env` local.
+4.  Render desplegará la API y la hará accesible a través de una URL pública. El health check se realiza en el endpoint `/health`.
 
-Tablas principales (resumen):
+---
 
-- `users` (con `first_name`, `middle_name`, `last_name`, `second_last_name`, `expires_on` y `photo_url`).
-- `class_sessions` (sesiones de clase; `offering_id` opcional).
-- `attendance` (asistencias con `status`, `source`, `recorded_by`).
-- `used_jti` (JTI efímeros; protección contra reuso).
-- `gates` (puertas de acceso) y `access_events` (logs de portería).
+## 🔧 Configuración de Supabase
 
-Vistas/Triggers:
+### Base de Datos
 
-- Vista de resumen por sesión (totales por estado): archivo `api_carnet/sql/session_reports.sql`.
-- Trigger para mantener `users.name` sincronizado a partir de nombres/apellidos (ver ejemplo en la sección de SQL avanzada más abajo si lo necesitas).
+El esquema de la base de datos incluye tablas para `users`, `class_sessions`, `attendance`, `gates`, y `access_events`. Se recomienda ejecutar el SQL en `api_carnet/sql/session_reports.sql` para crear una vista que facilite los reportes de asistencia.
 
-## Endpoints (resumen)
+### Almacenamiento (Storage)
 
-- `GET /health` → `{ ok: true }`.
-- `GET /.well-known/jwks.json` → clave pública EdDSA (verificación de tokens efímeros).
-- `POST /auth/register` → crea estudiante. Cuerpo JSON:
-  - `code`, `email`, `name`, `password`, `program`, `expiresAt?` (DD/MM/AAAA), `photo?` en `data:image/...;base64,...`.
-  - Devuelve `{ success, ephemeralCode, user }`.
-- `POST /auth/login` → `{ token, user }`. 
-  - Si el usuario es estudiante y su vencimiento faltaba o expiró, se renueva por 6 meses automáticamente.
-- `POST /issue-ephemeral` (Bearer) → emite QR efímero:
-  - `{ token, qrUrl, ttl, student { ..., photoUrl (firmada), photoUrlExpiresIn }, ephemeralCode }`.
-- `POST /verify` → verificación (portería). 
-  - Acepta `t` en query o `token` en body; opcional `Authorization: Bearer <porter>`, `gate`, `direction`.
-  - Responde `{ valid, student }` o `{ valid:false, reason }`. Registra evento en `access_events`.
-- `POST /prof/start-session` (teacher) → inicia sesión de clase. Body: `{ ttlSeconds?, offeringId? }`.
-- `POST /attendance/check-in` (student) → envía `sessionToken` (`ATTEND:...`).
-- `POST /prof/end-session` (teacher) → finaliza y devuelve asistentes.
-- `GET /prof/session/:id` (teacher) → detalle de asistencia.
-- `GET /__debug?k=...` (sólo staging) → verifica DB/Storage (controlado por `DEBUG_KEY`).
+1.  Ve a la sección de **Storage** en tu dashboard de Supabase.
+2.  Crea un nuevo bucket llamado `avatars`.
+3.  **Importante**: Asegúrate de que el bucket sea **privado**. La API se encargará de generar URLs firmadas y temporales para acceder a las imágenes de forma segura.
 
-## Datos de Prueba
+<details>
+<summary>
+🧪 Ejemplos con cURL
+</summary>
 
-Usuarios de ejemplo (password para todos: `password123`):
-
-- Docentes: `carolina.alvarez@profes.upc.edu.co`, `andres.salazar@profes.upc.edu.co`
-- Porteros: `luis.medina@seguridad.upc.edu.co`, `nelson.patino@seguridad.upc.edu.co`
-- Estudiantes: uno por programa (p. ej. `santiago.rojas@upc.edu.co`, `felipe.garcia@upc.edu.co`, etc.)
-
-El código del estudiante (`code`) es el sujeto en tokens y la clave para asistencia.
-
-## Ejemplos cURL (rápidos)
-
-Reemplaza `BASE=https://unicheck-api-qr.onrender.com` con tu URL.
+Reemplaza `BASE` con la URL de tu API (local o desplegada).
 
 ```bash
-BASE=https://unicheck-api-qr.onrender.com
+BASE=http://localhost:3000
 
-# 1) Registro (estudiante)
-curl -sS -X POST "$BASE/auth/register" \
+# 1. Registrar un estudiante
+curl -X POST "$BASE/auth/register" \
   -H "Content-Type: application/json" \
   -d '{
     "code":"U123456",
     "email":"test@example.edu",
     "name":"Test Estudiante",
+    "firstName": "Test",
+    "lastName": "Estudiante",
     "password":"P@ssw0rd123",
     "program":"Ingenieria de Sistemas"
   }'
 
-# 2) Login → guarda el token
-TOKEN=$(curl -sS -X POST "$BASE/auth/login" -H "Content-Type: application/json" \
+# 2. Iniciar sesión para obtener un token
+TOKEN=$(curl -s -X POST "$BASE/auth/login" \
+  -H "Content-Type: application/json" \
   -d '{"email":"test@example.edu","password":"P@ssw0rd123"}' | jq -r .token)
-echo "TOKEN=$TOKEN"
 
-# 3) Emitir QR efímero (alumno)
-curl -sS -X POST "$BASE/issue-ephemeral" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{}'
+echo "Token obtenido: $TOKEN"
 
-# 4) Obtener URL firmada de foto (si no vino en #3)
-curl -sS -H "Authorization: Bearer $TOKEN" "$BASE/users/me/photo-url"
+# 3. Emitir un QR efímero (como estudiante)
+curl -X POST "$BASE/issue-ephemeral" \
+  -H "Authorization: Bearer $TOKEN"
 
-# 5) Subir/actualizar foto (data URL mínima de 1x1 PNG)
-curl -sS -X PUT "$BASE/users/me/photo" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"photo":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="}'
-
-# 6) Iniciar sesión de clase (docente)
-TEACHER_TOKEN=... # token de un usuario con rol teacher
-curl -sS -X POST "$BASE/prof/start-session" \
-  -H "Authorization: Bearer $TEACHER_TOKEN" -H "Content-Type: application/json" \
-  -d '{"ttlSeconds": 900}'
-
-# 7) Check-in de asistencia (alumno)
-# Usa el sessionToken devuelto en #6 dentro de ATTEND:...
-SESSION_TOKEN=... # el valor después del prefijo ATTEND:
-curl -sS -X POST "$BASE/attendance/check-in" \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"sessionToken":"'$SESSION_TOKEN'"}'
-
-# 8) Finalizar sesión de clase (docente)
-SESSION_ID=... # devuelta en #6
-curl -sS -X POST "$BASE/prof/end-session" \
-  -H "Authorization: Bearer $TEACHER_TOKEN" -H "Content-Type: application/json" \
-  -d '{"sessionId":"'$SESSION_ID'"}'
-
-# 9) Ver detalle de asistencia (docente)
-curl -sS -H "Authorization: Bearer $TEACHER_TOKEN" "$BASE/prof/session/$SESSION_ID"
+# 4. Iniciar una sesión de clase (como profesor, requiere un token de docente)
+TEACHER_TOKEN="<token_de_profesor>"
+curl -X POST "$BASE/prof/start-session" \
+  -H "Authorization: Bearer $TEACHER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"ttlSeconds": 600}'
 ```
-
-> Consejo: si no tienes `jq`, cambia los comandos que lo usan por inspección manual del JSON.
-
-## Preguntas Frecuentes (FAQ)
-
-- No carga la foto en el carnet
-  - Asegúrate de que el usuario tenga `photo_url` en DB y que el bucket `avatars` sea privado.
-  - El API devuelve una URL firmada en `POST /issue-ephemeral`; el front la cachea hasta su expiración.
-
-- Error 500 tras desplegar en Render
-  - Revisa `DATABASE_URL`: usa el Pooler y `sslmode=require` (y `options=project=<ref>` si aplica).
-  - Valida `/__debug?k=...` con `DEBUG_KEY` temporal para ver `db.ok` y `storage.ok`.
-
-- “forbidden” en `/__debug`
-  - La clave no coincide o no se recargó el servicio. Ajusta `DEBUG_KEY` y haz Manual Deploy.
-
-- El login dice “Credenciales inválidas” pero los usuarios existen
-  - Si usas códigos, recuerda que deben ser numéricos (validado en el frontend). 
-  - Asegúrate de que el password sea `password123` para los usuarios de prueba o actualiza el hash.
-
-- Android emulador no conecta al backend local
-  - Usa `--dart-define=API_BASE_URL=http://10.0.2.2:3000`.
-
-- ¿Cómo cambio el dominio de la API?
-  - Define `PUBLIC_BASE_URL` en Render o usa un dominio custom; el servidor construye QR/issuer con esa URL.
-
-## Depuración y Consejos
-
-- Error TLS en Postgres (SELF_SIGNED_CERT_IN_CHAIN): usa `sslmode=require` en `DATABASE_URL` o el Pooler de Supabase.
-- Foto no muestra: asegúrate de que exista `photo_url` en DB y que el bucket `avatars` sea privado; el API devuelve una URL firmada.
-- Minimiza requests: el carnet cachea la URL firmada y la renueva al vencer.
-
-## Scripts de prueba
-
-- `api_carnet/scripts/smoke.http` (REST Client) y `api_carnet/scripts/smoke.js` (Node) para probar registro/login/foto.
-
----
-
-## Apéndice — SQL de apoyo
-
-Vista de resumen por sesión (si no la tienes ya):
-
-```sql
-create or replace view public.session_attendance_summary as
-select
-  s.id as session_id,
-  s.teacher_code,
-  extract(epoch from s.started_at)::bigint as started_at,
-  extract(epoch from s.expires_at)::bigint as expires_at,
-  s.offering_id,
-  count(a.id) as total,
-  count(a.id) filter (where a.status = 'present') as present,
-  count(a.id) filter (where a.status = 'late') as late,
-  count(a.id) filter (where a.status = 'excused') as excused,
-  count(distinct a.student_code) as unique_students
-from public.class_sessions s
-left join public.attendance a on a.session_id = s.id
-group by s.id, s.teacher_code, s.started_at, s.expires_at, s.offering_id
-order by s.started_at desc;
-```
-
-Trigger para mantener `users.name` sincronizado (opcional):
-
-```sql
-create or replace function public.users_sync_full_name()
-returns trigger language plpgsql as $$
-begin
-  new.name := btrim(
-    regexp_replace(
-      concat_ws(' ', coalesce(new.first_name,''), coalesce(new.middle_name,''), coalesce(new.last_name,''), coalesce(new.second_last_name,'')),
-      '\\s+', ' ', 'g'
-    )
-  );
-  return new;
-end; $$;
-
-drop trigger if exists trg_users_sync_full_name on public.users;
-create trigger trg_users_sync_full_name
-before insert or update of first_name, middle_name, last_name, second_last_name, name
-on public.users for each row execute function public.users_sync_full_name();
-```
-
----
-
-## English (Brief)
-
-- Flutter app + Node/Express API on Render. Postgres on Supabase with Storage for avatars.
-- Env vars: `DATABASE_URL`, `JWT_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE`, optional `AVATAR_BUCKET`, `PUBLIC_BASE_URL`.
-- Key endpoints: `/auth/register`, `/auth/login`, `/issue-ephemeral`, `/verify`, `/prof/start-session`, `/attendance/check-in`.
-- Debug: `/__debug?k=...` controlled by `DEBUG_KEY` (staging only).
-- The app caches signed avatar URLs and refreshes on expiry.
-## API Docs y ejemplos cURL
-
-La API expone Swagger UI en `/docs` y el spec en `/openapi.yaml`.
-
-- Local: `http://localhost:3000/docs`
-- Render: agrega `/docs` a la URL pública de tu servicio
-
-Autenticación: la mayoría de endpoints usan `Authorization: Bearer <JWT>`.
-
-### Flujo típico
-
-1) Login (obtén `token` y `refreshToken`)
-
-```bash
-BASE=http://localhost:3000
-curl -sX POST "$BASE/auth/login" \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"ana.perez@uni.edu","password":"Secreta123"}' | jq .
-```
-
-PowerShell (sin jq):
-
-```powershell
-$BASE = 'http://localhost:3000'
-curl -Method Post "$BASE/auth/login" -ContentType 'application/json' \
-  -Body '{"email":"ana.perez@uni.edu","password":"Secreta123"}' | \
-  Select-Object -ExpandProperty Content | ConvertFrom-Json
-```
-
-2) Usar el token como Student (emitir QR efímero)
-
-```bash
-TOKEN_STU="<Pega token del paso 1>"
-curl -sX POST "$BASE/issue-ephemeral" \
-  -H "Authorization: Bearer $TOKEN_STU" \
-  -H 'Content-Type: application/json' \
-  -d '{"deviceId":"pixel-7-ana"}' | jq .
-```
-
-3) Verificar QR (porter opcional)
-
-```bash
-QR_JWT="<token devuelto en issue-ephemeral>"
-TOKEN_POR="<token de porter si lo tienes>"
-curl -sX POST "$BASE/verify" \
-  -H "Authorization: Bearer $TOKEN_POR" \
-  -H 'Content-Type: application/json' \
-  -d "{\"token\":\"$QR_JWT\",\"gate\":\"GATE-1\",\"direction\":\"in\"}" | jq .
-```
-
-4) Flujo profesor
-
-```bash
-TOKEN_TCH="<token de teacher>"
-# Iniciar sesión de clase
-curl -sX POST "$BASE/prof/start-session" \
-  -H "Authorization: Bearer $TOKEN_TCH" -H 'Content-Type: application/json' \
-  -d '{"ttlSeconds":600}' | jq .
-
-# Cerrar sesión de clase
-SESSION_ID="<id devuelto>"
-curl -sX POST "$BASE/prof/end-session" \
-  -H "Authorization: Bearer $TOKEN_TCH" -H 'Content-Type: application/json' \
-  -d "{\"sessionId\":\"$SESSION_ID\"}" | jq .
-```
-
-### Errores comunes (respuesta JSON)
-
-- 400 faltan/invalid params: `{ "error": "missing_params", "message": "Faltan parámetros" }`
-- 401 no autenticado/token inválido: `{ "error": "invalid_token", "message": "Token inválido" }`
-- 403 rol insuficiente: `{ "error": "forbidden", "message": "Rol insuficiente" }`
-- 404 sesión no encontrada: `{ "error": "session_not_found" }`
-
-Nota: Swagger UI ahora recuerda el `Authorize` (persistAuthorization) y muestra `operationId` para facilitar pruebas.
-
-## Guía iOS (compilar, permisos y depuración)
-
-Requisitos
-- macOS con Xcode.
-- CocoaPods instalado (si falta: `sudo gem install cocoapods`).
-- iOS mínimo 13.0.
-
-Pasos recomendados (dispositivo real)
-```
-flutter clean
-rm -rf ios/Pods ios/Podfile.lock
-flutter pub get
-cd ios && pod repo update && pod install && cd ..
-open ios/Runner.xcworkspace
-```
-
-En Xcode (target Runner)
-- Signing & Capabilities: selecciona tu Team.
-- Añade capability "Multicast Networking" (mDNS, iOS 14+).
-- Verifica iOS Deployment Target = 13.0.
-
-Permisos y red local
-- Info.plist incluye `NSLocalNetworkUsageDescription` y `NSBonjourServices` para que Flutter pueda adjuntar el depurador vía mDNS.
-- Al primer arranque, acepta el permiso de "Red local" en el iPhone.
-- Si no aparece, revisa Ajustes > Privacidad > Red local y habilita la app.
-
-Ejecutar
-```
-# Simulador
-flutter run -d ios
-
-# Dispositivo real (debug)
-flutter run -d <device>
-
-# Si queda en "waiting to attach", ejecuta sin DDS
-flutter run -d <device> --no-dds --verbose
-
-# Para descartar problemas del debugger
-flutter run -d <device> --release
-```
-
-Backend local desde iOS
-- Simulador: `--dart-define=API_BASE_URL=http://localhost:3000`
-- Dispositivo real: `--dart-define=API_BASE_URL=http://<IP-LAN>:3000`
-
-ATS (solo desarrollo)
-Si usas HTTP, Info.plist permite ATS laxo en desarrollo. Para producción, elimina esa excepción o limita por dominio.
+</details>
