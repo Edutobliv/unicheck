@@ -1,0 +1,120 @@
+// index.js (versiÃ³n ESM)
+import 'dotenv/config';
+import dns from 'node:dns';
+// Prefer IPv4 first to avoid ENETUNREACH when an IPv6 AAAA is returned (Render free often lacks IPv6 egress)
+try { dns.setDefaultResultOrder('ipv4first'); } catch {}
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { randomInt } from 'node:crypto';
+import swaggerUi from 'swagger-ui-express';
+import YAML from 'yamljs';
+import { generateKeyPair, SignJWT, jwtVerify, exportJWK, importJWK } from "jose";
+import { v4 as uuidv4 } from "uuid";
+import bcrypt from "bcryptjs";
+
+import {
+  ensureSchema,
+  seedUsersIfEmpty,
+  getUserByEmail,
+  getUserByCode,
+  userExistsByEmailOrCode,
+  createUser,
+  createSessionWithId,
+  getSession,
+  endSessionNow,
+  addAttendance,
+  getAttendance,
+  getAttendanceEntry,
+  updateUserPhotoPath,
+  updateUserExpiry,
+  getPool,
+  addAttendanceManual,
+  removeAttendance,
+  searchStudents,
+  storeRefreshToken,
+  revokeRefreshToken,
+  getRefreshToken,
+  getStudentByEmailInsensitive,
+  upsertPasswordResetRequest,
+  getPasswordResetRequest,
+  incrementPasswordResetAttempts,
+  deletePasswordResetRequest,
+  updateUserPasswordHash,
+  deleteRefreshTokensForUser,
+} from "./db.js";
+import { uploadUserAvatarFromDataUrl, createSignedAvatarUrl, replaceUserAvatarFromDataUrl, deleteAvatarPath, supabaseAdmin } from "./storage.js";
+
+const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
+// Prefer an explicit public base URL, else Render's provided URL, else localhost
+const BASE_URL =
+  process.env.PUBLIC_BASE_URL ||
+  process.env.RENDER_EXTERNAL_URL ||
+  `http://localhost:${PORT}`;
+const TOKEN_TTL_SECONDS = 15; // cada token/QR dura 15 segundos
+const SESSION_TTL = process.env.JWT_TTL || '24h'; // duraciÃ³n del JWT de sesiÃ³n (login)
+
+// Para este MVP usaremos memoria local solo para evitar reuso de tokens efÃ­meros
+const ROLE_TTL = {
+  student: process.env.JWT_TTL_STUDENT || '15m',
+  teacher: process.env.JWT_TTL_TEACHER || '1h',
+  porter:  process.env.JWT_TTL_PORTER  || '1h',
+};
+function ttlForRole(role) { return ROLE_TTL[role] || SESSION_TTL; }
+
+const REFRESH_TTL = process.env.REFRESH_TTL || '30d';
+
+const usedJti = new Map();
+
+function parseDurationToSeconds(s) {
+  if (!s || typeof s !== 'string') return 0;
+  const m = /^([0-9]+)\s*([smhd])$/.exec(s.trim());
+  if (!m) return 0;
+  const n = parseInt(m[1], 10);
+  const u = m[2];
+  const map = { s: 1, m: 60, h: 3600, d: 86400 };
+  return n * (map[u] || 0);
+}
+
+const PASSWORD_RESET_TTL = parseDurationToSeconds(process.env.PASSWORD_RESET_TTL || '10m') || 600;
+const PASSWORD_RESET_MAX_ATTEMPTS = parseInt(process.env.PASSWORD_RESET_MAX_ATTEMPTS || '5', 10) || 5;
+const DEBUG_RESET_OTP = process.env.DEBUG_RESET_OTP === '1';
+
+function maskEmail(email) {
+  if (!email || typeof email !== 'string') return '';
+  const trimmed = email.trim();
+  const at = trimmed.indexOf('@');
+  if (at <= 0) return trimmed;
+  const local = trimmed.slice(0, at);
+  const domain = trimmed.slice(at + 1);
+  const anonymize = (value) => {
+    if (!value) return '';
+    if (value.length <= 2) return value[0] + '*';
+    return value[0] + '*'.repeat(Math.max(1, value.length - 2)) + value.slice(-1);
+  };
+  const maskedLocal = anonymize(local);
+  if (!domain) return maskedLocal;
+  const domainParts = domain.split('.');
+  if (domainParts.length === 0) return maskedLocal;
+  if (domainParts[0]) {
+    domainParts[0] = anonymize(domainParts[0]);
+  }
+  return `${maskedLocal}@${domainParts.join('.')}`;
+}
+
+function generateOtp(length = 6) {
+  const max = 10 ** Math.max(1, length);
+  return randomInt(0, max).toString().padStart(length, '0');
+}
+
+function isStrongPassword(password) {
+  if (typeof password !== 'string') return false;
+  if (password.length < 8) return false;
+  const hasUpper = /[A-Z]/.test(password);
+  const hasLower = /[a-z]/.test(password);
+  const hasDigit = /\d/.test(password);
+  const hasSpecial = /[^A-Za-z0-9]/.test(password);

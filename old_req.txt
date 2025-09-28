@@ -1,0 +1,54 @@
+app.post("/auth/password-reset/request", async (req, res) => {
+  try {
+    const { email, code } = req.body || {};
+    const rawEmail = typeof email === "string" ? email.trim() : "";
+    const rawCode = typeof code === "string" ? code.trim() : "";
+    const identifier = rawEmail || rawCode;
+    if (!identifier) {
+      return res.status(400).json({
+        error: "missing_identifier",
+        message: "Debes proporcionar tu correo institucional o codigo.",
+      });
+    }
+
+    let user = null;
+    if (rawEmail) {
+      user = await getUserByEmail(rawEmail);
+    } else if (rawCode) {
+      user = await getUserByCode(rawCode);
+    }
+
+    if (!user) {
+      return res.json({ ok: true, maskedEmail: null, expiresIn: PASSWORD_RESET_TTL });
+    }
+
+    // Send Supabase OTP to email\n    const sb = supabaseAdmin();\n    await sb.auth.signInWithOtp({ email: user.email });
+
+    await upsertPasswordResetRequest({
+      userCode: user.code,
+      email: user.email,
+      otpHash,
+      expiresAt,
+      maxAttempts: PASSWORD_RESET_MAX_ATTEMPTS,
+    });
+
+    if (DEBUG_RESET_OTP) {
+      console.log(`[password-reset] OTP for ${user.email} (${user.code}): ${otp}`);
+    } else {
+      console.log(`[password-reset] OTP enviado a ${user.email}`);
+    }
+
+    const payload = {
+      ok: true,
+      maskedEmail: maskEmail(user.email),
+      expiresIn: PASSWORD_RESET_TTL,
+    };
+
+    return res.json(payload);
+  } catch (err) {
+    console.error("[password-reset][request]", err);
+    return res.status(500).json({
+      error: "reset_request_failed",
+      message: "No se pudo enviar el codigo. Intentalo mas tarde.",
+    });
+  }
