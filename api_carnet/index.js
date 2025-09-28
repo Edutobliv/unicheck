@@ -408,49 +408,16 @@ app.post("/auth/password-reset/confirm", async (req, res) => {
       });
     }
 
-    const reset = await getPasswordResetRequest(user.code);
-    if (!reset) {
-      return res.status(400).json({
-        error: "otp_required",
-        message: "Solicita un nuevo codigo antes de continuar.",
-      });
-    }
-
-    if (reset.expiresAt && reset.expiresAt.getTime() <= Date.now()) {
-      await deletePasswordResetRequest(user.code);
-      return res.status(400).json({
-        error: "otp_expired",
-        message: "El codigo expiro. Solicita uno nuevo.",
-      });
-    }
-
-    if (reset.attempts >= reset.maxAttempts) {
-      await deletePasswordResetRequest(user.code);
-      return res.status(400).json({
-        error: "otp_locked",
-        message: "Se agotaron los intentos. Solicita un nuevo codigo.",
-      });
-    }
-
-    const otpOk = await bcrypt.compare(otpValue, reset.otpHash || "");
-    if (!otpOk) {
-      const updated = await incrementPasswordResetAttempts(user.code);
-      if (updated && updated.attempts >= updated.maxAttempts) {
-        await deletePasswordResetRequest(user.code);
-        return res.status(400).json({
-          error: "otp_locked",
-          message: "Se agotaron los intentos. Solicita un nuevo codigo.",
-        });
-      }
-      return res.status(400).json({
-        error: "otp_invalid",
-        message: "Codigo incorrecto. Verifica e intenta de nuevo.",
-      });
+    // Verificar OTP con Supabase (correo)
+    try {
+      const sb = supabaseAdmin();
+      await sb.auth.verifyOtp({ email: user.email, token: otpValue, type: 'email' });
+    } catch (e) {
+      return res.status(400).json({ error: 'otp_invalid', message: 'Codigo incorrecto o vencido.' });
     }
 
     const newHash = await bcrypt.hash(passwordValue, 10);
     await updateUserPasswordHash(user.code, newHash);
-    await deletePasswordResetRequest(user.code);
     await deleteRefreshTokensForUser(user.code);
 
     return res.json({ ok: true });
