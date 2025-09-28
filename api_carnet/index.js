@@ -409,22 +409,35 @@ app.post("/auth/password-reset/confirm", async (req, res) => {
       });
     }
 
-    // Verificar OTP con Supabase (correo)
-    try {
-      const sb = supabaseAdmin();
-      // Verificar token del correo de recuperación (type: 'recovery')
-      await sb.auth.verifyOtp({ email: user.email, token: otpValue, type: 'recovery' });
-    } catch (e) {
-      return res.status(400).json({ error: 'otp_invalid', message: 'Codigo incorrecto o vencido.' });
+    const sb = supabaseAdmin();
+    const { data: verificationData, error: verificationError } = await sb.auth.verifyOtp({
+      email: user.email,
+      token: otpValue,
+      type: 'recovery',
+    });
+    if (verificationError || !verificationData?.user) {
+      if (verificationError) {
+        console.error('[password-reset][confirm][otp_error]', verificationError);
+      }
+      return res
+          .status(400)
+          .json({ error: 'otp_invalid', message: 'Codigo incorrecto o vencido.' });
     }
 
     if (dryRun) {
+      try {
+        await sb.auth.signOut();
+      } catch (_) {}
       return res.json({ ok: true, dryRun: true });
     }
 
     const newHash = await bcrypt.hash(passwordValue, 10);
     await updateUserPasswordHash(user.code, newHash);
     await deleteRefreshTokensForUser(user.code);
+
+    try {
+      await sb.auth.signOut();
+    } catch (_) {}
 
     return res.json({ ok: true });
   } catch (err) {
