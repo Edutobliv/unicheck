@@ -686,7 +686,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
 
   
 
-  void _handleOtpContinue() {
+  Future<void> _handleOtpContinue() async {
     final input = _otpCtrl.text.trim();
     if (input.isEmpty) {
       setState(() {
@@ -694,13 +694,98 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
       });
       return;
     }
+    if (_identifierValue == null) {
+      setState(() {
+        _globalError = 'Solicita un codigo antes de continuar.';
+        _step = _ForgotPasswordStep.identifier;
+      });
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
     setState(() {
-      _otpValue = input;
+      _loading = true;
       _otpError = null;
-      _passwordError = null;
-      _confirmError = null;
-      _step = _ForgotPasswordStep.password;
+      _globalError = null;
     });
+
+    try {
+      final uri = Uri.parse(
+        widget.baseUrl,
+      ).resolve('auth/password-reset/confirm');
+      final Map<String, dynamic> body = {
+        'otp': input,
+        'dryRun': true,
+      };
+      if (_identifierIsEmail) {
+        body['email'] = _identifierValue;
+      } else {
+        body['code'] = _identifierValue;
+      }
+      final resp = await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        setState(() {
+          _otpValue = input;
+          _passwordError = null;
+          _confirmError = null;
+          _step = _ForgotPasswordStep.password;
+        });
+        return;
+      }
+
+      final data = _parseBody(resp.body);
+      final errorCode = data['error']?.toString();
+      final message =
+          data['message']?.toString() ?? 'Codigo incorrecto o vencido.';
+
+      if (errorCode == 'otp_invalid') {
+        setState(() {
+          _step = _ForgotPasswordStep.otp;
+          _otpError = message;
+        });
+        return;
+      }
+
+      if (errorCode == 'otp_locked' ||
+          errorCode == 'otp_expired' ||
+          errorCode == 'otp_required') {
+        setState(() {
+          _step = _ForgotPasswordStep.identifier;
+          _globalError = message;
+          _otpCtrl.clear();
+          _otpValue = null;
+        });
+        return;
+      }
+
+      setState(() {
+        _otpError = message;
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() {
+        _otpError = 'Tiempo de espera agotado. Intentalo nuevamente.';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _otpError = 'Error de red. Intentalo mas tarde.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
+    }
   }
 
   bool _isStrongPassword(String value) {
@@ -997,11 +1082,14 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
           ),
           keyboardType: TextInputType.text,
           enabled: !_loading,
-          onSubmitted: (_) => _loading ? null : _handleOtpContinue(),
+          onSubmitted: (_) {
+            if (_loading) return;
+            _handleOtpContinue();
+          },
         ),
         const SizedBox(height: BrandSpacing.sm),
         PrimaryButton(
-          onPressed: _loading ? null : _handleOtpContinue,
+          onPressed: _loading ? null : () => _handleOtpContinue(),
           child: _loading
               ? const SizedBox(
                   width: 20,
