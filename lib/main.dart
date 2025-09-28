@@ -890,11 +890,11 @@ class _AccountInfoPanel extends StatelessWidget {
               value: email,
               icon: Icons.alternate_email,
             ),
-          const SizedBox(height: BrandSpacing.md),
-          SecondaryButton(
-            onPressed: onUploadPhoto,
-            child: const Text('Actualizar foto'),
-          ),
+          //const SizedBox(height: BrandSpacing.md),
+          //SecondaryButton(
+          //  onPressed: onUploadPhoto,
+          //  child: const Text('Actualizar foto'),
+          //),
         ],
       ),
     );
