@@ -19,7 +19,6 @@ async function createPool() {
   // and proper TLS SNI. Add keepAlive and relaxed SSL verification.
   return new Pool({
     connectionString,
-    ssl: { rejectUnauthorized: false },
     keepAlive: true,
     application_name: process.env.PG_APP_NAME || 'unicheck-api',
   });
