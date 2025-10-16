@@ -56,7 +56,7 @@ const BASE_URL =
   process.env.RENDER_EXTERNAL_URL ||
   `http://localhost:${PORT}`;
 const TOKEN_TTL_SECONDS = 15; // cada token/QR dura 15 segundos
-const SESSION_TTL = process.env.JWT_TTL || '24h'; // duraciÃ³n del JWT de sesiÃ³n (login)
+const SESSION_TTL = process.env.JWT_TTL || '24h'; // duración del JWT de sesión (login)
 
 // Para este MVP usaremos memoria local solo para evitar reuso de tokens efÃ­meros
 const ROLE_TTL = {
@@ -704,7 +704,7 @@ function requireAuth(role) {
   };
 }
 
-// Endpoint que emite un QR efÃ­mero
+// Endpoint que emite un QR efí­mero
 app.post("/issue-ephemeral", requireAuth("student"), async (req, res) => {
   try {
     const { code } = req.user;
