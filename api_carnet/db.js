@@ -21,6 +21,7 @@ async function createPool() {
     connectionString,
     keepAlive: true,
     application_name: process.env.PG_APP_NAME || 'unicheck-api',
+    ssl: { rejectUnauthorized: false },
   });
 }
 
