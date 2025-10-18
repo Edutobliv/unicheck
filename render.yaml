@@ -1,33 +1,33 @@
+# Exported from Render on 2025-10-18T14:50:13Z
+version: "1"
 services:
-  - type: web
-    name: unicheck-api
-    env: node
-    plan: free
-    rootDir: api_carnet
-    buildCommand: npm ci --omit=dev
-    startCommand: npm start
-    autoDeploy: true
-    healthCheckPath: /health
-    envVars:
-      # Provide placeholders so the blueprint validates; set real values in the Render dashboard after creation
-      - key: DATABASE_URL
-        value: ""
-      - key: JWT_SECRET
-        generateValue: true
-      - key: SUPABASE_URL
-        value: ""
-      - key: SUPABASE_SERVICE_ROLE
-        value: ""
-      - key: AVATAR_BUCKET
-        value: avatars
-      - key: NODE_ENV
-        value: production
-      - key: NPM_CONFIG_AUDIT
-        value: "false"
-      - key: NPM_CONFIG_FUND
-        value: "false"
-      - key: NPM_CONFIG_LOGLEVEL
-        value: error
-      # Optional: restrict who can register/login by email domain
-      # - key: ALLOWED_EMAIL_DOMAINS
-      #   value: example.edu
+- type: web
+  name: unicheck-api
+  runtime: node
+  repo: https://github.com/Edutobliv/unicheck
+  plan: free
+  envVars:
+  - key: NPM_CONFIG_LOGLEVEL
+    sync: false
+  - key: NPM_CONFIG_FUND
+    sync: false
+  - key: NPM_CONFIG_AUDIT
+    sync: false
+  - key: NODE_ENV
+    sync: false
+  - key: AVATAR_BUCKET
+    sync: false
+  - key: SUPABASE_SERVICE_ROLE
+    sync: false
+  - key: SUPABASE_URL
+    sync: false
+  - key: JWT_SECRET
+    sync: false
+  - key: DATABASE_URL
+    sync: false
+  region: oregon
+  buildCommand: npm ci --omit=dev
+  startCommand: npm start
+  healthCheckPath: /health
+  autoDeployTrigger: commit
+  rootDir: api_carnet
