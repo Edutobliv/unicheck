@@ -31,8 +31,8 @@ Future<void> main() async {
 Future<void> _initSupabase() async {
   try {
     await Supabase.initialize(
-      url: SupabaseConfig.url,
-      anonKey: SupabaseConfig.anonKey,
+      url: 'https://kiuutfehtetjsplqxtsi.supabase.co',
+      anonKey: 'sb_publishable_F0pmRIGb4UdUu6155udrfQ_TiSwbA-r',
     ).timeout(const Duration(seconds: 4));
   } catch (_) {
     // Nonâ€‘blocking: app can operate with backend-only flows
