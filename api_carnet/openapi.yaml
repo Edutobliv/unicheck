@@ -1,46 +1,111 @@
 openapi: 3.0.3
 info:
   title: UniCheck API
-  version: 1.1.0
+  version: 1.2.0
   description: |
-    API para autenticación, emisión/validación de QR efímero y gestión de asistencia.
+    API para autenticacion, emision/validacion de QR efimero y gestion de asistencia.
 
     Seguridad y roles:
-    - JWT Bearer con claim `role` ∈ {student, teacher, porter}.
-    - Endpoints con `x-roles` requieren ese rol; si no coincide → 403.
-    - `/verify` es público; puede incluir Bearer de porter para atribución.
-    - Fechas de estudiantes en DD/MM/YYYY.
+    - Autenticacion JWT Bearer (HS256) con claim `role` en {student, teacher, porter}.
+    - Endpoints con `x-roles` requieren ese rol en el token.
+    - `/verify` es publico; puede incluir Bearer de porter para atribucion.
+    - Fechas de estudiantes en formato DD/MM/YYYY.
+  contact:
+    name: UniCheck Maintainers
+    url: https://github.com/Edutobliv/unicheck
+  license:
+    name: MIT
 servers:
   - url: /
     description: Host actual (recomendado para pruebas)
   - url: http://localhost:3000
     description: Desarrollo local
   - url: https://unicheck-api-qr.onrender.com
-    description: Render (producción)
+    description: Render (produccion)
 tags:
   - name: System
+    description: Salud y metadatos del servicio
   - name: Auth
+    description: Registro, login, refresh y reset de contrasena
   - name: Users
+    description: Perfil del usuario autenticado (foto)
   - name: QR
+    description: Emision de QR efimero por estudiantes
   - name: Verify
+    description: Verificacion de QR en porteria/acceso
   - name: Professor
+    description: Sesiones de clase y asistencia (rol teacher)
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: "Enviar Authorization: Bearer <token> (claim role puede ser requerido)"
+      description: Enviar `Authorization: Bearer <token>`
+    DebugKey:
+      type: apiKey
+      in: header
+      name: x-debug-key
+      description: Clave para endpoint de diagnostico (`/__debug`)
+  parameters:
+    QParam:
+      in: query
+      name: q
+      required: false
+      schema: { type: string }
+      description: Termino de busqueda (email, nombre o codigo)
+    SessionIdInPath:
+      in: path
+      name: id
+      required: true
+      schema: { type: string }
+    VerifyTokenInQuery:
+      in: query
+      name: t
+      required: false
+      schema: { type: string }
+    GateInQuery:
+      in: query
+      name: gate
+      required: false
+      schema: { type: string }
+    DirectionInQuery:
+      in: query
+      name: direction
+      required: false
+      schema: { type: string, enum: [in, out] }
+  responses:
+    Unauthorized:
+      description: No autenticado o token invalido
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Rol insuficiente
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Recurso no encontrado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ValidationError:
+      description: Datos invalidos o faltantes
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ServerError:
+      description: Error interno del servidor
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
   schemas:
     ErrorResponse:
       type: object
       properties:
-        error: { type: string, description: Código de error }
+        error: { type: string, description: Codigo de error }
         message: { type: string, description: Mensaje legible }
-      examples:
-        invalid_credentials: { value: { error: invalid_credentials, message: "Usuario o contraseña incorrectos" } }
-        forbidden: { value: { error: forbidden, message: "Rol insuficiente" } }
-        missing_params: { value: { error: missing_params, message: "Faltan parámetros" } }
     User:
       type: object
       properties:
@@ -59,35 +124,39 @@ components:
         code: STU001
         email: ana.perez@uni.edu
         role: student
-        name: Ana Pérez
-        program: Ingeniería
+        name: Ana Perez
+        program: Ingenieria
         expiresAt: 31/12/2025
         photoUrl: https://.../signed/avatar.jpg
+    TokenPair:
+      type: object
+      properties:
+        token: { type: string, description: Access token (HS256) }
+        refreshToken: { type: string }
     LoginRequest:
       type: object
       description: Debe incluir `email` o `code` junto con `password`.
       properties:
         email: { type: string, format: email }
-        code: { type: string, description: Código institucional }
+        code: { type: string, description: Codigo institucional }
         password: { type: string }
       required: [password]
       anyOf:
         - required: [email]
         - required: [code]
-      example: { email: ana.perez@uni.edu, password: Secreta123 }
+      example: { email: valentina.martinez@upc.edu.co, password: password123 }
     LoginResponse:
-      type: object
-      properties:
-        token: { type: string }
-        refreshToken: { type: string }
-        user: { $ref: '#/components/schemas/User' }
+      allOf:
+        - $ref: '#/components/schemas/TokenPair'
+        - type: object
+          properties:
+            user: { $ref: '#/components/schemas/User' }
     RefreshRequest:
       type: object
       properties: { refreshToken: { type: string } }
       required: [refreshToken]
     RefreshResponse:
-      type: object
-      properties: { token: { type: string }, refreshToken: { type: string } }
+      $ref: '#/components/schemas/TokenPair'
     RegisterRequest:
       type: object
       properties:
@@ -112,8 +181,8 @@ components:
         name: Nuevo Estudiante
         firstName: Nuevo
         lastName: Estudiante
-        password: Secreta123
-        program: Ingeniería
+        password: password123
+        program: Ingenieria
         expiresAt: 31/12/2025
         role: student
     RegisterResponse:
@@ -137,13 +206,11 @@ components:
     IssueEphemeralRequest:
       type: object
       properties:
-        deviceId:
-          type: string
-          description: Identificador del dispositivo del estudiante
+        deviceId: { type: string, description: Identificador del dispositivo del estudiante }
     IssueEphemeralResponse:
       type: object
       properties:
-        token: { type: string, description: JWT EdDSA efímero }
+        token: { type: string, description: JWT EdDSA efimero }
         qrUrl: { type: string }
         ttl: { type: integer }
         student: { $ref: '#/components/schemas/User' }
@@ -195,12 +262,53 @@ components:
       type: object
       properties: { sessionToken: { type: string } }
       required: [sessionToken]
+    StudentSearchResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              email: { type: string, format: email }
+              name: { type: string }
+    DebugStatusResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        env:
+          type: object
+          properties:
+            hasDatabaseUrl: { type: boolean }
+            hasSupabaseUrl: { type: boolean }
+            hasSupabaseServiceRole: { type: boolean }
+            avatarBucket: { type: string }
+            baseUrl: { type: string }
+        db:
+          type: object
+          properties:
+            ok: { type: boolean }
+            now: { type: string, nullable: true }
+            error: { type: string, nullable: true }
+        storage:
+          type: object
+          properties:
+            ok: { type: boolean }
+            sample: { type: string, nullable: true }
+            error: { type: string, nullable: true }
+    JWKS:
+      type: object
+      properties:
+        keys:
+          type: array
+          items: { type: object }
 paths:
   /health:
     get:
       tags: [System]
       operationId: health
-      summary: Health check
+      summary: Verificar salud del servicio
       responses:
         '200':
           description: OK
@@ -209,18 +317,24 @@ paths:
               schema:
                 type: object
                 properties: { ok: { type: boolean } }
+        '500': { $ref: '#/components/responses/ServerError' }
   /.well-known/jwks.json:
     get:
       tags: [System]
       operationId: jwks
-      summary: JWKS público para validar QR EdDSA
+      summary: JWKS publico para validar QR EdDSA
       responses:
-        '200': { description: OK }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JWKS' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /__debug:
     get:
       tags: [System]
       operationId: debug
-      summary: Diagnósticos (protegido por x-debug-key)
+      summary: Diagnosticos (protegido por x-debug-key)
       parameters:
         - in: header
           name: x-debug-key
@@ -229,27 +343,26 @@ paths:
           name: k
           schema: { type: string }
       responses:
-        '200': { description: Estado }
+        '200': { description: Estado, content: { application/json: { schema: { $ref: '#/components/schemas/DebugStatusResponse' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /auth/login:
     post:
       tags: [Auth]
       operationId: authLogin
       security: []
-      summary: Iniciar sesión (email o code + password)
+      summary: Iniciar sesion (email o codigo + password)
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/LoginRequest' }
       responses:
-        '200':
-          description: Sesión creada
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/LoginResponse' }
-        '400': { description: Falta email/código o password, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
-        '401': { description: Usuario o contraseña incorrectos, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
-        '403': { description: Dominio de email no permitido, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '200': { description: Sesion creada, content: { application/json: { schema: { $ref: '#/components/schemas/LoginResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /auth/refresh:
     post:
       tags: [Auth]
@@ -263,7 +376,8 @@ paths:
             schema: { $ref: '#/components/schemas/RefreshRequest' }
       responses:
         '200': { description: Token renovado, content: { application/json: { schema: { $ref: '#/components/schemas/RefreshResponse' } } } }
-        '401': { description: Refresh inválido/expirado/revocado, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /auth/register:
     post:
       tags: [Auth]
@@ -277,8 +391,54 @@ paths:
             schema: { $ref: '#/components/schemas/RegisterRequest' }
       responses:
         '200': { description: Registrado, content: { application/json: { schema: { $ref: '#/components/schemas/RegisterResponse' } } } }
-        '400': { description: Faltan campos, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
         '409': { description: Usuario ya existe, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /auth/password-reset/request:
+    post:
+      tags: [Auth]
+      operationId: passwordResetRequest
+      security: []
+      summary: Solicitar codigo de reset (via Supabase)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+                code: { type: string }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean }, maskedEmail: { type: string, nullable: true } } } } } }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /auth/password-reset/confirm:
+    post:
+      tags: [Auth]
+      operationId: passwordResetConfirm
+      security: []
+      summary: Confirmar reset con OTP (flujo preflight o directo)
+      description: |
+        - Preflight: enviar { email/code, otp, dryRun:true } para validar OTP y obtener `preflightToken` (5 min).
+        - Final: enviar { preflightToken, newPassword, otp } para actualizar contrasena.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email }
+                code: { type: string }
+                otp: { type: string }
+                newPassword: { type: string }
+                dryRun: { type: boolean }
+                preflightToken: { type: string }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean }, dryRun: { type: boolean, nullable: true }, preflightToken: { type: string, nullable: true } } } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /users/me/photo-url:
     get:
       tags: [Users]
@@ -288,7 +448,8 @@ paths:
       x-roles: [student, teacher, porter]
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PhotoUrlResponse' } } } }
-        '401': { description: No autenticado/Token inválido, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /users/me/photo:
     put:
       tags: [Users]
@@ -303,8 +464,9 @@ paths:
             schema: { $ref: '#/components/schemas/PhotoUpdateRequest' }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/PhotoUrlResponse' } } } }
-        '400': { description: Foto inválida, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
-        '401': { description: No autenticado/Token inválido, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
     delete:
       tags: [Users]
       operationId: usersPhotoDelete
@@ -313,12 +475,13 @@ paths:
       x-roles: [student, teacher, porter]
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean }, deleted: { type: boolean } } } } } }
-        '401': { description: No autenticado/Token inválido, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /issue-ephemeral:
     post:
       tags: [QR]
       operationId: qrIssue
-      summary: Emitir token/QR efímero (solo student)
+      summary: Emitir token/QR efimero (solo student)
       description: Requiere rol student en el JWT
       security: [ { bearerAuth: [] } ]
       x-roles: [student]
@@ -329,29 +492,21 @@ paths:
             schema: { $ref: '#/components/schemas/IssueEphemeralRequest' }
       responses:
         '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/IssueEphemeralResponse' } } } }
-        '401': { description: No autenticado/Token inválido, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
-        '403': { description: Rol insuficiente (se requiere student), content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /verify:
     post:
       tags: [Verify]
       operationId: qrVerify
-      summary: Verificar QR efímero
+      summary: Verificar QR efimero
       description: |
-        Acepta token en el cuerpo (token) o query t.
-        Puede incluir Authorization: Bearer ... de un porter para atribuir el evento.
+        Acepta token en el cuerpo (`token`) o parametro de query `t`.
+        Puede incluir `Authorization: Bearer ...` (porter) para atribuir el evento.
       parameters:
-        - in: query
-          name: t
-          required: false
-          schema: { type: string }
-        - in: query
-          name: gate
-          required: false
-          schema: { type: string }
-        - in: query
-          name: direction
-          required: false
-          schema: { type: string, enum: [in, out] }
+        - $ref: '#/components/parameters/VerifyTokenInQuery'
+        - $ref: '#/components/parameters/GateInQuery'
+        - $ref: '#/components/parameters/DirectionInQuery'
       requestBody:
         required: false
         content:
@@ -359,19 +514,20 @@ paths:
             schema: { $ref: '#/components/schemas/VerifyRequest' }
       responses:
         '200':
-          description: Resultado de verificación
+          description: Resultado de verificacion
           content:
             application/json:
               schema:
                 oneOf:
                   - $ref: '#/components/schemas/VerifyResponseValid'
                   - $ref: '#/components/schemas/VerifyResponseInvalid'
-        '401': { description: Token inválido }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /prof/start-session:
     post:
       tags: [Professor]
       operationId: profStartSession
-      summary: Iniciar sesión de clase (solo teacher)
+      summary: Iniciar sesion de clase (solo teacher)
       security: [ { bearerAuth: [] } ]
       x-roles: [teacher]
       requestBody:
@@ -380,15 +536,16 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/StartSessionRequest' }
       responses:
-        '200': { description: Sesión iniciada, content: { application/json: { schema: { $ref: '#/components/schemas/StartSessionResponse' } } } }
-        '401': { description: No autenticado/Token inválido }
-        '403': { description: Rol insuficiente (se requiere teacher) }
+        '200': { description: Sesion iniciada, content: { application/json: { schema: { $ref: '#/components/schemas/StartSessionResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /prof/end-session:
     post:
       tags: [Professor]
       operationId: profEndSession
-      summary: Finalizar sesión (solo teacher)
-      description: Acepta sessionId en body o id por query
+      summary: Finalizar sesion (solo teacher)
+      description: Acepta `sessionId` en body o `id` por query
       security: [ { bearerAuth: [] } ]
       x-roles: [teacher]
       requestBody:
@@ -404,9 +561,10 @@ paths:
           schema: { type: string }
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean }, session: { $ref: '#/components/schemas/Session' }, attendees: { type: array, items: { $ref: '#/components/schemas/AttendanceEntry' } } } } } } }
-        '401': { description: No autenticado/Token inválido }
-        '403': { description: Rol insuficiente (se requiere teacher) }
-        '404': { description: Sesión no encontrada }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /attendance/check-in:
     post:
       tags: [Professor]
@@ -421,31 +579,30 @@ paths:
             schema: { $ref: '#/components/schemas/CheckInRequest' }
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean }, sessionId: { type: string }, entry: { $ref: '#/components/schemas/AttendanceEntry' } } } } } }
-        '400': { description: Token de sesión inválido/expirado o falta sessionToken }
-        '401': { description: No autenticado/Token inválido }
-        '404': { description: Sesión no encontrada }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /prof/session/{id}:
     get:
       tags: [Professor]
       operationId: profGetSession
-      summary: Obtener sesión y asistentes (solo teacher)
+      summary: Obtener sesion y asistentes (solo teacher)
       security: [ { bearerAuth: [] } ]
       x-roles: [teacher]
       parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string }
+        - $ref: '#/components/parameters/SessionIdInPath'
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: object, properties: { session: { $ref: '#/components/schemas/Session' }, attendees: { type: array, items: { $ref: '#/components/schemas/AttendanceEntry' } } } } } } }
-        '401': { description: No autenticado/Token inválido }
-        '403': { description: Rol insuficiente (se requiere teacher) }
-        '404': { description: Sesión no encontrada }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /prof/attendance/add:
     post:
       tags: [Professor]
       operationId: profAttendanceAdd
-      summary: Añadir asistencia manual (solo teacher)
+      summary: Aniadir asistencia manual (solo teacher)
       security: [ { bearerAuth: [] } ]
       x-roles: [teacher]
       requestBody:
@@ -463,10 +620,11 @@ paths:
               byEmail: { value: { sessionId: 2c8c5235-1e3d-4cc7-9f67-1e6bb8a409e1, email: ana.perez@uni.edu } }
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean }, entry: { $ref: '#/components/schemas/AttendanceEntry' } } } } } }
-        '400': { description: Parámetros faltantes }
-        '401': { description: No autenticado/Token inválido }
-        '403': { description: Rol insuficiente (se requiere teacher) }
-        '404': { description: Sesión o estudiante no encontrado }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /prof/attendance:
     delete:
       tags: [Professor]
@@ -485,10 +643,11 @@ paths:
                 studentCode: { type: string }
       responses:
         '200': { description: OK, content: { application/json: { schema: { type: object, properties: { ok: { type: boolean } } } } } }
-        '400': { description: Parámetros faltantes }
-        '401': { description: No autenticado/Token inválido }
-        '403': { description: Rol insuficiente (se requiere teacher) }
-        '404': { description: Sesión no encontrada }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /prof/students/search:
     get:
       tags: [Professor]
@@ -497,23 +656,10 @@ paths:
       security: [ { bearerAuth: [] } ]
       x-roles: [teacher]
       parameters:
-        - in: query
-          name: q
-          schema: { type: string }
-          example: ana
+        - $ref: '#/components/parameters/QParam'
       responses:
-        '200':
-          description: Resultados
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  items:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        code: { type: string }
-                        email: { type: string, format: email }
-                        name: { type: string }
+        '200': { description: Resultados, content: { application/json: { schema: { $ref: '#/components/schemas/StudentSearchResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/ServerError' }
+

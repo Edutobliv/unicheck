@@ -1,0 +1,85 @@
+config:
+  target: "{{ $processEnvironment.TARGET_BASE_URL }}"
+  processor: "./processor.js"
+  phases:
+    - duration: 20
+      arrivalRate: 1
+      name: "Smoke"
+  defaults:
+    headers:
+      Content-Type: application/json
+scenarios:
+  - name: "System health and JWKS"
+    flow:
+      - get:
+          url: "/health"
+      - get:
+          url: "/.well-known/jwks.json"
+
+  - name: "Student QR ephemeral flow"
+    flow:
+      - post:
+          url: "/auth/login"
+          json:
+            email: "{{ $processEnvironment.TEST_EMAIL }}"
+            password: "{{ $processEnvironment.TEST_PASSWORD }}"
+          capture:
+            - json: "$.token"
+              as: "student_token"
+      - get:
+          url: "/users/me/photo-url"
+          headers:
+            Authorization: "Bearer {{ student_token }}"
+      - post:
+          url: "/issue-ephemeral"
+          headers:
+            Authorization: "Bearer {{ student_token }}"
+          json:
+            deviceId: "artillery-smoke"
+          capture:
+            - json: "$.token"
+              as: "qr_token"
+      - post:
+          url: "/verify"
+          json:
+            token: "{{ qr_token }}"
+            gate: "gate-1"
+            direction: "in"
+
+  - name: "Teacher session + student check-in"
+    flow:
+      - post:
+          url: "/auth/login"
+          json:
+            email: "{{ $processEnvironment.TEACHER_EMAIL }}"
+            password: "{{ $processEnvironment.TEACHER_PASSWORD }}"
+          capture:
+            - json: "$.token"
+              as: "teacher_token"
+      - post:
+          url: "/prof/start-session"
+          headers:
+            Authorization: "Bearer {{ teacher_token }}"
+          json:
+            ttlSeconds: 120
+          capture:
+            - json: "$.qrText"
+              as: "qr_text"
+            - json: "$.session.id"
+              as: "session_id"
+      - function: "extract_session_token"
+      - post:
+          url: "/auth/login"
+          json:
+            email: "{{ $processEnvironment.TEST_EMAIL }}"
+            password: "{{ $processEnvironment.TEST_PASSWORD }}"
+          capture:
+            - json: "$.token"
+              as: "student_token2"
+      - post:
+          url: "/attendance/check-in"
+          headers:
+            Authorization: "Bearer {{ student_token2 }}"
+          json:
+            sessionToken: "{{ session_token }}"
+
