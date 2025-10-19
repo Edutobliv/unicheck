@@ -41,7 +41,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Enviar `Authorization: Bearer <token>`
+      description: "Enviar Authorization: Bearer <token>"
     DebugKey:
       type: apiKey
       in: header
@@ -663,3 +663,91 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '500': { $ref: '#/components/responses/ServerError' }
 
+# Vendor extension: escenarios de prueba separados (normal vs stress)
+x-tests:
+  normal:
+    groups:
+      - name: System
+        get:
+          - { path: /health }
+          - { path: /.well-known/jwks.json }
+        post: []
+        put: []
+        delete: []
+      - name: Auth
+        get: []
+        post:
+          - { path: /auth/login, body: { email: 'user@example.edu', password: 'Secreta123!' } }
+          - { path: /auth/refresh, body: { refreshToken: '...' } }
+          - { path: /auth/register, body: { code: 'STU001', email: 'user@example.edu', name: 'Nombre Apellido', firstName: 'Nombre', lastName: 'Apellido', password: 'Secreta123!' } }
+          - { path: /auth/password-reset/request, body: { email: 'user@example.edu' } }
+          - { path: /auth/password-reset/confirm, body: { email: 'user@example.edu', otp: '123456', dryRun: true } }
+        put: []
+        delete: []
+      - name: Users
+        get:
+          - { path: /users/me/photo-url, headers: { Authorization: 'Bearer <access-token>' } }
+        post: []
+        put:
+          - { path: /users/me/photo, headers: { Authorization: 'Bearer <access-token>' }, body: { photo: 'data:image/png;base64,AAA...' } }
+        delete:
+          - { path: /users/me/photo, headers: { Authorization: 'Bearer <access-token>' } }
+      - name: QR
+        get: []
+        post:
+          - { path: /issue-ephemeral, headers: { Authorization: 'Bearer <access-token>' }, body: { deviceId: 'device-1' } }
+        put: []
+        delete: []
+      - name: Verify
+        get: []
+        post:
+          - { path: /verify, body: { token: '<qr-token>', gate: 'gate-1', direction: 'in' } }
+        put: []
+        delete: []
+      - name: Professor
+        get:
+          - { path: /prof/session/{id}, headers: { Authorization: 'Bearer <teacher-token>' } }
+        post:
+          - { path: /prof/start-session, headers: { Authorization: 'Bearer <teacher-token>' }, body: { ttlSeconds: 300 } }
+          - { path: /attendance/check-in, headers: { Authorization: 'Bearer <student-token>' }, body: { sessionToken: '<session-token>' } }
+          - { path: /prof/end-session, headers: { Authorization: 'Bearer <teacher-token>' }, body: { sessionId: '<uuid>' } }
+          - { path: /prof/attendance/add, headers: { Authorization: 'Bearer <teacher-token>' }, body: { sessionId: '<uuid>', code: 'STU001' } }
+        put: []
+        delete:
+          - { path: /prof/attendance, headers: { Authorization: 'Bearer <teacher-token>' }, body: { sessionId: '<uuid>', studentCode: 'STU001' } }
+  stress:
+    groups:
+      - name: System
+        get:
+          - { path: /health }
+          - { path: /.well-known/jwks.json }
+        post: []
+        put: []
+        delete: []
+      - name: Auth
+        get: []
+        post:
+          - { path: /auth/login, body: { email: 'user@example.edu', password: 'Secreta123!' } }
+          - { path: /auth/refresh, body: { refreshToken: '...' } }
+        put: []
+        delete: []
+      - name: Users
+        get:
+          - { path: /users/me/photo-url, headers: { Authorization: 'Bearer <access-token>' } }
+        post: []
+        put: []
+        delete: []
+      - name: QR
+        get: []
+        post:
+          - { path: /issue-ephemeral, headers: { Authorization: 'Bearer <access-token>' }, body: { deviceId: 'stress-runner' } }
+          - { path: /verify, body: { token: '<qr-token>', gate: 'gate-stress', direction: 'in' } }
+        put: []
+        delete: []
+      - name: Professor
+        get: []
+        post:
+          - { path: /prof/start-session, headers: { Authorization: 'Bearer <teacher-token>' }, body: { ttlSeconds: 120 } }
+        put: []
+        delete:
+          - { path: /prof/attendance, headers: { Authorization: 'Bearer <teacher-token>' }, body: { sessionId: '<uuid>', studentCode: 'STU001' } }
