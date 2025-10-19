@@ -11,7 +11,7 @@
     "load:artillery:stress": "npx --yes artillery run loadtests/artillery/stress.yml",
     "load:k6:smoke": "k6 run loadtests/k6/smoke.js",
     "load:k6:stress": "k6 run loadtests/k6/stress.js",
-    "lint:openapi": "npx --yes @redocly/cli lint -d openapi.yaml",
+    "lint:openapi": "npx --yes @redocly/cli lint openapi.yaml",
     "bundle:openapi": "npx --yes @redocly/cli bundle openapi.yaml -o openapi.bundle.yaml",
     "lint:openapi:spectral": "npx --yes @stoplight/spectral-cli lint openapi.yaml"
   },
