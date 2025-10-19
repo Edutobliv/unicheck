@@ -140,40 +140,69 @@ app.use(helmet());
 // Allow up to ~20MB JSON payloads to accommodate base64 images (~1.33x overhead for 10MB raw)
 app.use(express.json({ limit: '20mb' }));
 
-// Swagger UI / OpenAPI
+// Swagger UI / OpenAPI (always mount UI and serve from file URL)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-let swaggerDoc = null;
-try {
-  const specPath = path.join(__dirname, 'openapi.yaml');
-  swaggerDoc = YAML.load(specPath);
-  // Rutas para servir el spec
-  app.get('/openapi.yaml', (req, res) => {
-    res.type('text/yaml').send(fs.readFileSync(specPath, 'utf8'));
-  });
-  app.get('/openapi.json', (req, res) => {
-    res.type('application/json').send(JSON.stringify(swaggerDoc));
-  });
+const specPath = path.join(__dirname, 'openapi.yaml');
 
-  // Montar Swagger UI con CSP relajado solo en /docs y apuntando al spec
-  const docsRouter = express.Router();
-  docsRouter.use(helmet({ contentSecurityPolicy: false }));
-  docsRouter.use(swaggerUi.serve, swaggerUi.setup(swaggerDoc, {
+// Serve spec files
+app.get('/openapi.yaml', (req, res) => {
+  try {
+    const text = fs.readFileSync(specPath, 'utf8');
+    res.type('text/yaml').send(text);
+  } catch (err) {
+    res.status(500).json({ error: 'spec_read_failed', message: err?.message || String(err) });
+  }
+});
+app.get('/openapi.json', (req, res) => {
+  try {
+    const doc = YAML.load(specPath);
+    res.type('application/json').send(JSON.stringify(doc));
+  } catch (err) {
+    res.status(500).json({ error: 'spec_load_failed', message: err?.message || String(err) });
+  }
+});
+
+// Bundle endpoints (resolve to a single JSON/YAML payload; for our spec, internal $refs remain)
+app.get('/openapi.bundle.json', (req, res) => {
+  try {
+    const doc = YAML.load(specPath);
+    res.type('application/json').send(JSON.stringify(doc));
+  } catch (err) {
+    res.status(500).json({ error: 'spec_bundle_failed', message: err?.message || String(err) });
+  }
+});
+app.get('/openapi.bundle.yaml', (req, res) => {
+  try {
+    const doc = YAML.load(specPath);
+    const yml = YAML.stringify(doc, 10, 2);
+    res.type('text/yaml').send(yml);
+  } catch (err) {
+    res.status(500).json({ error: 'spec_bundle_failed', message: err?.message || String(err) });
+  }
+});
+
+// Mount Swagger UI with relaxed CSP on /docs pointing to /openapi.yaml
+const docsRouter = express.Router();
+docsRouter.use(helmet({ contentSecurityPolicy: false }));
+docsRouter.use(
+  swaggerUi.serve,
+  swaggerUi.setup(null, {
     explorer: true,
     swaggerOptions: {
-      url: '/openapi.yaml',
+      url: '/openapi.bundle.json',
       urls: [
-        { url: '/openapi.yaml', name: 'OpenAPI (YAML)' },
+        { url: '/openapi.bundle.json', name: 'OpenAPI bundle (JSON)' },
+        { url: '/openapi.bundle.yaml', name: 'OpenAPI bundle (YAML)' },
         { url: '/openapi.json', name: 'OpenAPI (JSON)' },
+        { url: '/openapi.yaml', name: 'OpenAPI (YAML)' },
       ],
       persistAuthorization: true,
       displayOperationId: true,
     },
-  }));
-  app.use('/docs', docsRouter);
-} catch (e) {
-  console.warn('Swagger/OpenAPI no disponible:', e?.message || String(e));
-}
+  })
+);
+app.use('/docs', docsRouter);
 
 let privateKey;
 let publicJwk;
