@@ -51,7 +51,10 @@ Requiere `k6` instalado localmente.
 cd api_carnet
 npm run load:k6:smoke
 npm run load:k6:stress
+npm run load:k6:soak
 ```
+
+- `load:k6:soak`: prueba de resistencia (~2h) con carga moderada (10→30 VUs).
 
 ## Consejos
 
@@ -59,4 +62,3 @@ npm run load:k6:stress
 - Los tokens efímeros expiran en ~15s; las pruebas los verifican inmediatamente.
 - Monitorea `/__debug?k=...` durante la prueba para revisar conectividad a DB/Storage (si tienes `DEBUG_KEY`).
 - Observa métricas en Render (CPU, memoria) y en tu base de datos de Supabase (conexiones, latencia) mientras se ejecutan.
-
