@@ -73,6 +73,7 @@ class _TeacherPageState extends State<TeacherPage> {
     final hours = safeDiff ~/ 3600;
     final minutes = (safeDiff % 3600) ~/ 60;
     final seconds = safeDiff % 60;
+    // (1) Resolver conflicto: mantener solo el tiempo, sin prefijo.
     return '${_two(hours)}:${_two(minutes)}:${_two(seconds)}';
   }
 
@@ -132,6 +133,7 @@ class _TeacherPageState extends State<TeacherPage> {
         setState(() {
           _sessionId = session['id'] as String;
           _expiresAt = session['expiresAt'] as int?;
+          // (2) Resolver conflicto: usar fallback a "ahora" si el backend no envía startedAt.
           _startedAt = startedAt ?? DateTime.now().millisecondsSinceEpoch ~/ 1000;
           _qrText = data['qrText'] as String;
           _attendees = [];
@@ -168,6 +170,7 @@ class _TeacherPageState extends State<TeacherPage> {
         });
         _pollTimer?.cancel();
         _elapsedTicker?.cancel();
+        // (3) Resolver conflicto: limpiar estado local tras finalizar sesión.
         setState(() {
           _sessionId = null;
           _qrText = null;
@@ -657,6 +660,7 @@ class _ActiveSessionView extends StatelessWidget {
                   ),
                 ),
               ),
+              // (4) Resolver conflicto: mostrar etiqueta "CÓDIGO" (sin referenciar estado del padre).
               const SizedBox(height: 12),
               Text(
                 'CÓDIGO',
@@ -922,3 +926,4 @@ class _Header extends StatelessWidget {
     );
   }
 }
+
