@@ -29,6 +29,10 @@ import {
   addAttendance,
   getAttendance,
   getAttendanceEntry,
+  createClassOffering,
+  listClassOfferingsWithStats,
+  getClassOfferingForTeacher,
+  listSessionsForOffering,
   updateUserPhotoPath,
   updateUserExpiry,
   getPool,
@@ -841,6 +845,76 @@ app.post("/verify", async (req, res) => {
 
 // --- Flujo Profesor: sesiones y asistencia ---
 
+app.get('/prof/classes', requireAuth('teacher'), async (req, res) => {
+  try {
+    const teacherCode = req.user.code;
+    const items = await listClassOfferingsWithStats(teacherCode);
+    return res.json({
+      items: items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        createdAt: item.createdAt,
+        sessionsCount: item.sessionsCount ?? 0,
+        lastSessionAt: item.lastSessionAt,
+      })),
+    });
+  } catch (e) {
+    return res.status(500).json({ error: 'classes_list_failed' });
+  }
+});
+
+app.post('/prof/classes', requireAuth('teacher'), async (req, res) => {
+  try {
+    const rawName = req.body?.name;
+    const name = typeof rawName === 'string' ? rawName.trim() : '';
+    if (name.length < 3) {
+      return res.status(400).json({ error: 'invalid_name', message: 'Nombre demasiado corto' });
+    }
+    if (name.length > 120) {
+      return res.status(400).json({ error: 'invalid_name', message: 'Nombre demasiado largo' });
+    }
+    const created = await createClassOffering(req.user.code, name);
+    if (!created) {
+      return res.status(500).json({ error: 'class_create_failed' });
+    }
+    return res.status(201).json({
+      class: {
+        id: created.id,
+        name: created.name,
+        createdAt: created.createdAt,
+      },
+    });
+  } catch (e) {
+    return res.status(500).json({ error: 'class_create_failed' });
+  }
+});
+
+app.get('/prof/classes/:id/sessions', requireAuth('teacher'), async (req, res) => {
+  try {
+    const teacherCode = req.user.code;
+    const offeringId = req.params.id;
+    const offering = await getClassOfferingForTeacher(offeringId, teacherCode);
+    if (!offering) return res.status(404).json({ error: 'class_not_found' });
+    const sessions = await listSessionsForOffering(offeringId, teacherCode);
+    return res.json({
+      offering: {
+        id: offering.id,
+        name: offering.name,
+        createdAt: offering.createdAt,
+        totalSessions: sessions.length,
+      },
+      sessions: sessions.map((session) => ({
+        id: session.id,
+        startedAt: session.startedAt,
+        expiresAt: session.expiresAt,
+        attendeeCount: session.attendeeCount ?? 0,
+      })),
+    });
+  } catch (e) {
+    return res.status(500).json({ error: 'class_sessions_failed' });
+  }
+});
+
 // Profesor inicia una sesiÃ³n de clase y obtiene un token para QR que los alumnos escanean
 app.post("/prof/start-session", requireAuth("teacher"), async (req, res) => {
   try {
@@ -850,7 +924,14 @@ app.post("/prof/start-session", requireAuth("teacher"), async (req, res) => {
     const ttlReq = Number(req.body?.ttlSeconds);
     const ttl = Number.isFinite(ttlReq) && ttlReq > 0 ? Math.min(Math.max(ttlReq, 60), 3600) : 10 * 60; // 1-60 min
     const exp = now + ttl;
-    const offeringId = req.body?.offeringId || null;
+    const offeringIdRaw = req.body?.offeringId;
+    const offeringId = offeringIdRaw ? String(offeringIdRaw) : null;
+    if (offeringId) {
+      const offering = await getClassOfferingForTeacher(offeringId, teacherCode);
+      if (!offering) {
+        return res.status(404).json({ error: 'class_not_found' });
+      }
+    }
 
     // Persist session in DB
     await createSessionWithId(sessionId, teacherCode, now, exp, offeringId);
@@ -867,11 +948,11 @@ app.post("/prof/start-session", requireAuth("teacher"), async (req, res) => {
     // Texto para QR: se puede incluir URL directa del endpoint de check-in con el token como query
     const qrText = `ATTEND:${sessionToken}`;
 
-    return res.json({
-      session: { id: sessionId, startedAt: now, expiresAt: exp },
-      qrText,
-      ttl,
-    });
+      return res.json({
+        session: { id: sessionId, startedAt: now, expiresAt: exp, offeringId },
+        qrText,
+        ttl,
+      });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "start_session_failed" });
