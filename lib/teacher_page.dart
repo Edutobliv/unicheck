@@ -56,7 +56,7 @@ class TeacherClass {
       name: json['name']?.toString() ?? 'Clase',
       sessionsCount: (json['sessionsCount'] as num?)?.toInt() ??
           (json['totalSessions'] as num?)?.toInt() ??
-              0,
+          0,
       lastSessionAt: (json['lastSessionAt'] as num?)?.toInt(),
       createdAt: (json['createdAt'] as num?)?.toInt(),
     );
@@ -199,8 +199,7 @@ class _TeacherPageState extends State<TeacherPage> {
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _loadClasses() async {
@@ -355,8 +354,7 @@ class _TeacherPageState extends State<TeacherPage> {
         final offering = (data['offering'] as Map?)?.cast<String, dynamic>();
         final sessions = (data['sessions'] as List? ?? [])
             .cast<Map>()
-            .map((e) =>
-                ClassSessionSummary.fromJson(e.cast<String, dynamic>()))
+            .map((e) => ClassSessionSummary.fromJson(e.cast<String, dynamic>()))
             .toList();
         if (!mounted) return;
         setState(() {
@@ -503,8 +501,7 @@ class _TeacherPageState extends State<TeacherPage> {
     FocusScope.of(context).unfocus();
     try {
       final minutes = int.tryParse(_durationController.text.trim());
-      final ttlSeconds =
-          (minutes != null && minutes > 0) ? minutes * 60 : 600;
+      final ttlSeconds = (minutes != null && minutes > 0) ? minutes * 60 : 600;
       final resp = await http.post(
         Uri.parse('$_baseUrl/prof/start-session'),
         headers: {
@@ -524,8 +521,7 @@ class _TeacherPageState extends State<TeacherPage> {
         setState(() {
           _sessionId = session['id'] as String;
           _expiresAt = session['expiresAt'] as int?;
-          _startedAt =
-              startedAt ?? DateTime.now().millisecondsSinceEpoch ~/ 1000;
+          _startedAt = startedAt ?? DateTime.now().millisecondsSinceEpoch ~/ 1000;
           _qrText = data['qrText'] as String;
           _attendees.clear();
           _activeClass = klass;
@@ -611,8 +607,7 @@ class _TeacherPageState extends State<TeacherPage> {
         if (offeringId != null) {
           activeClass = _classes
               .where((c) => c.id == offeringId)
-              .fold<TeacherClass?>(
-                  activeClass, (prev, element) => element);
+              .fold<TeacherClass?>(activeClass, (prev, element) => element);
         }
         if (!mounted) return;
         setState(() {
@@ -703,9 +698,8 @@ class _TeacherPageState extends State<TeacherPage> {
     if (token == null) return;
     try {
       final isNumeric = int.tryParse(q) != null && q.length >= 4;
-      final body = isNumeric
-          ? {'sessionId': id, 'code': q}
-          : {'sessionId': id, 'email': q};
+      final body =
+          isNumeric ? {'sessionId': id, 'code': q} : {'sessionId': id, 'email': q};
       final resp = await http.post(
         Uri.parse('$_baseUrl/prof/attendance/add'),
         headers: {
@@ -815,15 +809,13 @@ class _TeacherPageState extends State<TeacherPage> {
 
   String _formatDate(int? seconds) {
     if (seconds == null) return '--';
-    final dt =
-        DateTime.fromMillisecondsSinceEpoch(seconds * 1000).toLocal();
+    final dt = DateTime.fromMillisecondsSinceEpoch(seconds * 1000).toLocal();
     return '${dt.year}-${_two(dt.month)}-${_two(dt.day)}';
   }
 
   String _formatTime(int? seconds) {
     if (seconds == null) return '--:--';
-    final dt =
-        DateTime.fromMillisecondsSinceEpoch(seconds * 1000).toLocal();
+    final dt = DateTime.fromMillisecondsSinceEpoch(seconds * 1000).toLocal();
     return '${_two(dt.hour)}:${_two(dt.minute)}';
   }
 
@@ -842,6 +834,7 @@ class _TeacherPageState extends State<TeacherPage> {
     final hasActiveSession =
         _sessionId != null && _qrText != null && _startedAt != null;
     final view = hasActiveSession ? _TeacherView.activeSession : _view;
+
     Widget content;
     switch (view) {
       case _TeacherView.overview:
@@ -941,14 +934,11 @@ class _TeacherPageState extends State<TeacherPage> {
     }
 
     final viewKey = '${view.index}-${_sessionId ?? ''}';
-
-    final screenWidth = MediaQuery.of(context).size.width;
     final horizontalPadding = screenWidth < 380 ? 16.0 : 24.0;
 
     return BrandScaffold(
       heroBackground: true,
-      padding:
-          EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 24),
+      padding: EdgeInsets.symmetric(horizontal: horizontalPadding, vertical: 24),
       body: Center(
         child: ConstrainedBox(
           constraints: BoxConstraints(
@@ -1484,10 +1474,8 @@ class _HistorySessionDetailView extends StatelessWidget {
           else if (attendees.isEmpty)
             Text(
               'No hubo registros de asistencia.',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: Colors.white70),
+              style:
+                  Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70),
             )
           else
             ListView.separated(
@@ -1503,7 +1491,7 @@ class _HistorySessionDetailView extends StatelessWidget {
                     : null;
                 final timeLabel = when != null
                     ? '${when.hour.toString().padLeft(2, '0')}:'
-                      '${when.minute.toString().padLeft(2, '0')}'
+                        '${when.minute.toString().padLeft(2, '0')}'
                     : '--:--';
                 return Container(
                   decoration: BoxDecoration(
@@ -1530,8 +1518,7 @@ class _HistorySessionDetailView extends StatelessWidget {
                     ),
                     subtitle: Text(
                       "${attendee.email ?? ''} · $timeLabel",
-                      style:
-                          TextStyle(color: Colors.white.withOpacity(0.7)),
+                      style: TextStyle(color: Colors.white.withOpacity(0.7)),
                     ),
                   ),
                 );
@@ -1783,8 +1770,7 @@ class _ActiveSessionView extends StatelessWidget {
                     ),
                     subtitle: Text(
                       "${suggestion['email'] ?? ''} · ${suggestion['code'] ?? ''}",
-                      style:
-                          TextStyle(color: Colors.white.withOpacity(0.7)),
+                      style: TextStyle(color: Colors.white.withOpacity(0.7)),
                     ),
                     onTap: () => onSuggestionTap(suggestion),
                   );
@@ -1827,7 +1813,7 @@ class _ActiveSessionView extends StatelessWidget {
                 final label = name.isNotEmpty ? name : code;
                 final timeLabel = when != null
                     ? '${when.hour.toString().padLeft(2, '0')}:'
-                      '${when.minute.toString().padLeft(2, '0')}'
+                        '${when.minute.toString().padLeft(2, '0')}'
                     : null;
                 return Container(
                   decoration: BoxDecoration(
@@ -1853,8 +1839,7 @@ class _ActiveSessionView extends StatelessWidget {
                     subtitle: Text(
                       "${attendee['email'] ?? ''}"
                       "${timeLabel != null ? ' · $timeLabel' : ''}",
-                      style:
-                          TextStyle(color: Colors.white.withOpacity(0.7)),
+                      style: TextStyle(color: Colors.white.withOpacity(0.7)),
                     ),
                     trailing: IconButton(
                       tooltip: 'Eliminar',
@@ -2190,10 +2175,8 @@ class _SummaryInfoCard extends StatelessWidget {
         children: [
           Text(
             label,
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: Colors.white70),
+            style:
+                Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white70),
           ),
           const SizedBox(height: 8),
           Text(
