@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:qr_flutter/qr_flutter.dart';
@@ -21,8 +22,10 @@ class _TeacherPageState extends State<TeacherPage> {
   String? _sessionId;
   String? _qrText;
   int? _expiresAt;
+  int? _startedAt;
   List<Map<String, dynamic>> _attendees = [];
   Timer? _pollTimer;
+  Timer? _elapsedTicker;
 
   // Sugerencias y alta manual
   final TextEditingController _addController = TextEditingController();
@@ -32,6 +35,7 @@ class _TeacherPageState extends State<TeacherPage> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _elapsedTicker?.cancel();
     _debounce?.cancel();
     _durationController.dispose();
     _addController.dispose();
@@ -46,6 +50,56 @@ class _TeacherPageState extends State<TeacherPage> {
     if (e <= now) return 'Expirada';
     final dt = DateTime.fromMillisecondsSinceEpoch(e * 1000).toLocal();
     return 'Expira: ${_two(dt.hour)}:${_two(dt.minute)}';
+  }
+
+  String? _startTimeLabel() {
+    final s = _startedAt;
+    if (s == null) return null;
+    final dt = DateTime.fromMillisecondsSinceEpoch(s * 1000).toLocal();
+    return 'Inicio: ${_two(dt.hour)}:${_two(dt.minute)}:${_two(dt.second)}';
+  }
+
+  String _elapsedLabel() {
+    final s = _startedAt;
+    if (s == null) return '';
+    final nowSeconds = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    var effectiveNow = nowSeconds;
+    final exp = _expiresAt;
+    if (exp != null && exp < effectiveNow) {
+      effectiveNow = exp;
+    }
+    final diff = effectiveNow - s;
+    final safeDiff = diff < 0 ? 0 : diff;
+    final hours = safeDiff ~/ 3600;
+    final minutes = (safeDiff % 3600) ~/ 60;
+    final seconds = safeDiff % 60;
+    return 'Tiempo transcurrido: '
+        '${_two(hours)}:${_two(minutes)}:${_two(seconds)}';
+  }
+
+  void _scheduleElapsedTicker() {
+    _elapsedTicker?.cancel();
+    final start = _startedAt;
+    if (start == null) return;
+    final exp = _expiresAt;
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    if (exp != null && exp <= now) {
+      return;
+    }
+    _elapsedTicker = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      final currentExp = _expiresAt;
+      final currentNow = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      if (currentExp != null && currentExp <= currentNow) {
+        setState(() {});
+        timer.cancel();
+      } else {
+        setState(() {});
+      }
+    });
   }
 
   Future<String?> _token() async {
@@ -78,10 +132,12 @@ class _TeacherPageState extends State<TeacherPage> {
         setState(() {
           _sessionId = session['id'] as String;
           _expiresAt = session['expiresAt'] as int?;
+          _startedAt = session['startedAt'] as int?;
           _qrText = data['qrText'] as String;
           _attendees = [];
         });
         _startPolling();
+        _scheduleElapsedTicker();
       } else {
         _toast('No se pudo iniciar la sesion (${resp.statusCode})');
       }
@@ -111,6 +167,7 @@ class _TeacherPageState extends State<TeacherPage> {
           _expiresAt = session['expiresAt'] as int?;
         });
         _pollTimer?.cancel();
+        _elapsedTicker?.cancel();
         await _fetchAttendance();
       } else {
         _toast('No se pudo finalizar (${resp.statusCode})');
@@ -144,10 +201,13 @@ class _TeacherPageState extends State<TeacherPage> {
             .cast<Map>()
             .map((e) => e.cast<String, dynamic>())
             .toList();
+        final session = (data['session'] as Map).cast<String, dynamic>();
         setState(() {
           _attendees = list;
-          _expiresAt = (data['session'] as Map)['expiresAt'] as int?;
+          _startedAt = session['startedAt'] as int?;
+          _expiresAt = session['expiresAt'] as int?;
         });
+        _scheduleElapsedTicker();
       }
     } catch (_) {}
   }
@@ -372,6 +432,34 @@ class _TeacherPageState extends State<TeacherPage> {
                     ),
                 ],
               ),
+              if (_sessionId != null && _startedAt != null) ...[
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.access_time, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_startTimeLabel() != null)
+                            Text(
+                              _startTimeLabel()!,
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          Text(
+                            _elapsedLabel(),
+                            style: const TextStyle(
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 16),
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
