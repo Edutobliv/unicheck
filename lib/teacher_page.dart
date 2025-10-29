@@ -17,7 +17,7 @@ class _TeacherPageState extends State<TeacherPage> {
   final String _baseUrl = ApiConfig.baseUrl;
 
   final TextEditingController _durationController = TextEditingController(
-    text: '10',
+    text: '60',
   );
   String? _sessionId;
   String? _qrText;
@@ -73,8 +73,8 @@ class _TeacherPageState extends State<TeacherPage> {
     final hours = safeDiff ~/ 3600;
     final minutes = (safeDiff % 3600) ~/ 60;
     final seconds = safeDiff % 60;
-    return 'Tiempo transcurrido: '
-        '${_two(hours)}:${_two(minutes)}:${_two(seconds)}';
+    // (1) Resolver conflicto: mantener solo el tiempo, sin prefijo.
+    return '${_two(hours)}:${_two(minutes)}:${_two(seconds)}';
   }
 
   void _scheduleElapsedTicker() {
@@ -129,10 +129,12 @@ class _TeacherPageState extends State<TeacherPage> {
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final session = (data['session'] as Map).cast<String, dynamic>();
+        final startedAt = session['startedAt'] as int?;
         setState(() {
           _sessionId = session['id'] as String;
           _expiresAt = session['expiresAt'] as int?;
-          _startedAt = session['startedAt'] as int?;
+          // (2) Resolver conflicto: usar fallback a "ahora" si el backend no envía startedAt.
+          _startedAt = startedAt ?? DateTime.now().millisecondsSinceEpoch ~/ 1000;
           _qrText = data['qrText'] as String;
           _attendees = [];
         });
@@ -168,7 +170,16 @@ class _TeacherPageState extends State<TeacherPage> {
         });
         _pollTimer?.cancel();
         _elapsedTicker?.cancel();
-        await _fetchAttendance();
+        // (3) Resolver conflicto: limpiar estado local tras finalizar sesión.
+        setState(() {
+          _sessionId = null;
+          _qrText = null;
+          _startedAt = null;
+          _expiresAt = null;
+          _attendees = [];
+          _addController.clear();
+          _suggestions = [];
+        });
       } else {
         _toast('No se pudo finalizar (${resp.statusCode})');
       }
@@ -377,263 +388,542 @@ class _TeacherPageState extends State<TeacherPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final screenWidth = MediaQuery.of(context).size.width;
-    // Ajusta el tamaño del QR para pantallas estrechas evitando overflow horizontal
     final double qrSize = (screenWidth - 16 * 2 - 24 * 2).clamp(180.0, 300.0);
+    final bool activeSession =
+        _sessionId != null && _qrText != null && _startedAt != null;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Panel del Profesor'),
-        actions: [
-          IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Usar Wrap en lugar de Row para que los botones salten de línea en pantallas estrechas
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 120,
-                    child: TextField(
-                      controller: _durationController,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Duracion (min)',
-                        isDense: true,
-                      ),
-                    ),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: _startSession,
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('Iniciar sesion de clase'),
-                  ),
-                  if (_sessionId != null)
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red.shade600,
-                      ),
-                      onPressed: _endSession,
-                      icon: const Icon(Icons.stop),
-                      label: const Text('Finalizar sesion'),
-                    ),
-                  if (_expiresAt != null)
-                    Text(
-                      _expiryLabel(),
-                      softWrap: false,
-                      overflow: TextOverflow.fade,
-                    ),
-                ],
+      backgroundColor: theme.colorScheme.surfaceVariant.withOpacity(0.15),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Card(
+              elevation: 6,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
               ),
-              if (_sessionId != null && _startedAt != null) ...[
-                const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.access_time, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (_startTimeLabel() != null)
-                            Text(
-                              _startTimeLabel()!,
-                              style: const TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                          Text(
-                            _elapsedLabel(),
-                            style: const TextStyle(
-                              fontFeatures: [FontFeature.tabularFigures()],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 16),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                transitionBuilder: (child, anim) => FadeTransition(
-                  opacity: anim,
-                  child: ScaleTransition(
-                    scale: Tween<double>(begin: 0.98, end: 1).animate(
-                      CurvedAnimation(parent: anim, curve: Curves.easeOutCubic),
-                    ),
-                    child: child,
-                  ),
-                ),
-                child: _qrText != null
-                    ? Center(
-                        key: const ValueKey('qr'),
-                        child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: QrImageView(
-                              data: _qrText!,
-                              version: QrVersions.auto,
-                              size: qrSize,
-                              errorCorrectionLevel: QrErrorCorrectLevel.M,
-                              backgroundColor: Colors.white,
-                            ),
-                          ),
-                        ),
-                      )
-                    : const Text('Inicia una sesion para generar el QR.'),
-              ),
-              const SizedBox(height: 16),
-              // Añadir asistente manualmente
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _addController,
-                      decoration: const InputDecoration(
-                        labelText:
-                            'Añadir por codigo o correo (solo estudiantes)',
-                        hintText: 'Ej: 470056402 o juan@upc.edu.co',
-                      ),
-                      onChanged: (v) {
-                        _debounce?.cancel();
-                        final s = v.trim();
-                        if (RegExp(r'^\d').hasMatch(s)) {
-                          setState(() => _suggestions = []);
-                          return;
-                        }
-                        _debounce = Timer(
-                          const Duration(milliseconds: 350),
-                          () {
-                            if (s.isNotEmpty) _searchSuggestions(s);
-                          },
-                        );
-                      },
-                      onSubmitted: (_) => _addAttendee(),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton.icon(
-                    onPressed: _addAttendee,
-                    icon: const Icon(Icons.person_add_alt_1),
-                    label: const Text('Añadir'),
-                  ),
-                ],
-              ),
-              if (_suggestions.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 180),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardColor,
-                    border: Border.all(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.outline.withValues(alpha: 0.6),
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: ListView.separated(
-                    itemCount: _suggestions.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) {
-                      final s = _suggestions[i];
-                      return ListTile(
-                        leading: const Icon(Icons.person_outline),
-                        title: Text(
-                          s['name']!.isNotEmpty ? s['name']! : s['email']!,
-                        ),
-                        subtitle: Text('${s['email']} - ${s['code']}'),
-                        onTap: () {
-                          _addController.text = s['email']!;
-                          setState(() => _suggestions = []);
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              const Text(
-                'Asistentes:',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
-                child: _attendees.isEmpty
-                    ? const Text('Aun no hay asistentes.')
-                    : ListView.separated(
-                        key: ValueKey(_attendees.length),
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemBuilder: (_, i) {
-                          final a = _attendees[i];
-                          final when = a['at'] is int
-                              ? DateTime.fromMillisecondsSinceEpoch(
-                                  (a['at'] as int) * 1000,
-                                )
-                              : null;
-                          final label = (a['name'] ?? a['code'] ?? 'Estudiante')
-                              .toString();
-                          final code = (a['code'] ?? '').toString();
-                          return Dismissible(
-                            key: ValueKey(code.isNotEmpty ? code : i),
-                            direction: DismissDirection.endToStart,
-                            confirmDismiss: (_) async {
-                              final ok = await _confirmDelete(label);
-                              if (ok && code.isNotEmpty) {
-                                await _removeAttendee(code);
-                              }
-                              return ok;
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+                child: SingleChildScrollView(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 250),
+                    child: activeSession
+                        ? _ActiveSessionView(
+                            key: const ValueKey('active'),
+                            startLabel: _startTimeLabel() ?? 'Inicio',
+                            elapsedLabel: _elapsedLabel(),
+                            onFinish: () {
+                              _endSession();
                             },
-                            background: Container(
-                              color: Colors.red.shade100,
-                              alignment: Alignment.centerRight,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                              ),
-                              child: const Icon(
-                                Icons.delete_outline,
-                                color: Colors.red,
-                              ),
-                            ),
-                            child: Card(
-                              child: ListTile(
-                                leading: const Icon(Icons.person),
-                                title: Text(label),
-                                subtitle: Text(
-                                  '${a['email'] ?? ''}${when != null ? ' - ${when.toLocal()}' : ''}',
-                                ),
-                                trailing: IconButton(
-                                  tooltip: 'Eliminar',
-                                  icon: const Icon(Icons.delete_outline),
-                                  onPressed: () async {
-                                    final ok = await _confirmDelete(label);
-                                    if (ok && code.isNotEmpty) {
-                                      await _removeAttendee(code);
-                                    }
-                                  },
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemCount: _attendees.length,
-                      ),
+                            expiryLabel: _expiryLabel(),
+                            qrText: _qrText!,
+                            qrSize: qrSize,
+                            addController: _addController,
+                            onAddAttendee: () {
+                              _addAttendee();
+                            },
+                            onQueryChange: _handleQueryChange,
+                            suggestions: _suggestions,
+                            onSuggestionTap: _onSuggestionTap,
+                            attendees: _attendees,
+                            onRemoveAttendee: _removeAttendee,
+                            confirmDelete: _confirmDelete,
+                            logout: () {
+                              _logout();
+                            },
+                          )
+                        : _PreSessionView(
+                            key: const ValueKey('pre'),
+                            durationController: _durationController,
+                            onStart: () {
+                              _startSession();
+                            },
+                            logout: () {
+                              _logout();
+                            },
+                          ),
+                  ),
+                ),
               ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  void _handleQueryChange(String value) {
+    _debounce?.cancel();
+    final trimmed = value.trim();
+    if (RegExp(r'^\d').hasMatch(trimmed)) {
+      setState(() => _suggestions = []);
+      return;
+    }
+    _debounce = Timer(
+      const Duration(milliseconds: 350),
+      () {
+        if (trimmed.isNotEmpty) _searchSuggestions(trimmed);
+      },
+    );
+  }
+
+  void _onSuggestionTap(Map<String, String> suggestion) {
+    _addController.text = suggestion['email']!;
+    setState(() => _suggestions = []);
+  }
 }
+
+class _PreSessionView extends StatelessWidget {
+  const _PreSessionView({
+    super.key,
+    required this.durationController,
+    required this.onStart,
+    required this.logout,
+  });
+
+  final TextEditingController durationController;
+  final VoidCallback onStart;
+  final VoidCallback logout;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _Header(logout: logout),
+        const SizedBox(height: 24),
+        Text(
+          'Duración (minutos)',
+          style: theme.textTheme.labelLarge?.copyWith(
+            letterSpacing: 0.2,
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: durationController,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            hintText: '60',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 28),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            onPressed: onStart,
+            icon: const Icon(Icons.play_arrow_rounded),
+            label: const Text(
+              'Iniciar sesión de clase',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ActiveSessionView extends StatelessWidget {
+  const _ActiveSessionView({
+    super.key,
+    required this.startLabel,
+    required this.elapsedLabel,
+    required this.onFinish,
+    required this.expiryLabel,
+    required this.qrText,
+    required this.qrSize,
+    required this.addController,
+    required this.onAddAttendee,
+    required this.onQueryChange,
+    required this.suggestions,
+    required this.onSuggestionTap,
+    required this.attendees,
+    required this.onRemoveAttendee,
+    required this.confirmDelete,
+    required this.logout,
+  });
+
+  final String startLabel;
+  final String elapsedLabel;
+  final VoidCallback onFinish;
+  final String expiryLabel;
+  final String qrText;
+  final double qrSize;
+  final TextEditingController addController;
+  final VoidCallback onAddAttendee;
+  final ValueChanged<String> onQueryChange;
+  final List<Map<String, String>> suggestions;
+  final ValueChanged<Map<String, String>> onSuggestionTap;
+  final List<Map<String, dynamic>> attendees;
+  final Future<void> Function(String, {String? label}) onRemoveAttendee;
+  final Future<bool> Function(String) confirmDelete;
+  final VoidCallback logout;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _Header(logout: logout),
+        const SizedBox(height: 24),
+        Row(
+          children: [
+            Expanded(
+              child: _InfoCard(
+                title: startLabel,
+                subtitle: 'Tiempo transcurrido',
+                value: elapsedLabel,
+                background: theme.colorScheme.surfaceVariant.withOpacity(0.4),
+                valueStyle: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: _InfoCard(
+                title: expiryLabel.isEmpty ? 'Expira' : expiryLabel,
+                subtitle: '',
+                value: '',
+                background: Colors.red.shade50,
+                borderColor: Colors.red.shade200,
+                titleStyle: theme.textTheme.titleMedium?.copyWith(
+                  color: Colors.red.shade700,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red.shade600,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            onPressed: onFinish,
+            icon: const Icon(Icons.stop_rounded),
+            label: const Text(
+              'Finalizar sesión',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Center(
+          child: Column(
+            children: [
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: QrImageView(
+                    data: qrText,
+                    version: QrVersions.auto,
+                    size: qrSize,
+                    errorCorrectionLevel: QrErrorCorrectLevel.M,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+              ),
+              // (4) Resolver conflicto: mostrar etiqueta "CÓDIGO" (sin referenciar estado del padre).
+              const SizedBox(height: 12),
+              Text(
+                'CÓDIGO',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2.2,
+                ),
+              ),
+              const SizedBox(height: 4),
+              SelectableText(
+                qrText,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 32),
+        Text(
+          'Añadir por código o cédula',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: addController,
+                decoration: const InputDecoration(
+                  hintText: 'Código o cédula...',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: onQueryChange,
+                onSubmitted: (_) => onAddAttendee(),
+              ),
+            ),
+            const SizedBox(width: 12),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: onAddAttendee,
+              child: const Text('Añadir'),
+            ),
+          ],
+        ),
+        if (suggestions.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant,
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            constraints: const BoxConstraints(maxHeight: 200),
+            child: ListView.separated(
+              itemCount: suggestions.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (_, index) {
+                final suggestion = suggestions[index];
+                return ListTile(
+                  leading: const Icon(Icons.person_outline),
+                  title: Text(
+                    suggestion['name']!.isNotEmpty
+                        ? suggestion['name']!
+                        : suggestion['email']!,
+                  ),
+                  subtitle:
+                      Text('${suggestion['email']} - ${suggestion['code']}'),
+                  onTap: () => onSuggestionTap(suggestion),
+                );
+              },
+            ),
+          ),
+        ],
+        const SizedBox(height: 28),
+        Text(
+          'Asistentes: ${attendees.length}',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 12),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          child: attendees.isEmpty
+              ? Text(
+                  'Aún no hay asistentes.',
+                  style: theme.textTheme.bodyMedium,
+                )
+              : ListView.separated(
+                  key: ValueKey(attendees.length),
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: attendees.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (_, index) {
+                    final attendee = attendees[index];
+                    final when = attendee['at'] is int
+                        ? DateTime.fromMillisecondsSinceEpoch(
+                            (attendee['at'] as int) * 1000,
+                          )
+                        : null;
+                    final label =
+                        (attendee['name'] ?? attendee['code'] ?? 'Estudiante')
+                            .toString();
+                    final code = (attendee['code'] ?? '').toString();
+                    return Dismissible(
+                      key: ValueKey(code.isNotEmpty ? code : index),
+                      direction: DismissDirection.endToStart,
+                      confirmDismiss: (_) async {
+                        final ok = await confirmDelete(label);
+                        if (ok && code.isNotEmpty) {
+                          await onRemoveAttendee(code, label: label);
+                        }
+                        return ok;
+                      },
+                      background: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: const Icon(
+                          Icons.delete_outline,
+                          color: Colors.red,
+                        ),
+                      ),
+                      child: Material(
+                        elevation: 1,
+                        borderRadius: BorderRadius.circular(14),
+                        child: ListTile(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          leading: const CircleAvatar(
+                            child: Icon(Icons.person),
+                          ),
+                          title: Text(label),
+                          subtitle: Text(
+                            '${attendee['email'] ?? ''}${when != null ? ' · ${when.toLocal()}' : ''}',
+                          ),
+                          trailing: IconButton(
+                            tooltip: 'Eliminar',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () async {
+                              final ok = await confirmDelete(label);
+                              if (ok && code.isNotEmpty) {
+                                await onRemoveAttendee(code, label: label);
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InfoCard extends StatelessWidget {
+  const _InfoCard({
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    this.background,
+    this.borderColor,
+    this.titleStyle,
+    this.valueStyle,
+  });
+
+  final String title;
+  final String subtitle;
+  final String value;
+  final Color? background;
+  final Color? borderColor;
+  final TextStyle? titleStyle;
+  final TextStyle? valueStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: background ?? theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: borderColor != null ? Border.all(color: borderColor!) : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: titleStyle ??
+                theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          if (subtitle.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+          if (value.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: valueStyle ??
+                  theme.textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _Header extends StatelessWidget {
+  const _Header({required this.logout});
+
+  final VoidCallback logout;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            'Panel del Profesor',
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Cerrar sesión',
+          onPressed: logout,
+          icon: const Icon(Icons.close_rounded),
+        ),
+      ],
+    );
+  }
+}
+
