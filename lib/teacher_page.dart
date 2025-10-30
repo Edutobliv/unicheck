@@ -501,8 +501,7 @@ class _TeacherPageState extends State<TeacherPage> {
     FocusScope.of(context).unfocus();
     try {
       final minutes = int.tryParse(_durationController.text.trim());
-      final ttlSeconds =
-          (minutes != null && minutes > 0) ? minutes * 60 : 600;
+      final ttlSeconds = (minutes != null && minutes > 0) ? minutes * 60 : 600;
       final resp = await http.post(
         Uri.parse('$_baseUrl/prof/start-session'),
         headers: {
@@ -988,10 +987,9 @@ class _OverviewView extends StatelessWidget {
       title: 'Mis Clases',
       subtitle: 'Gestiona tus asistencias',
       actions: [
-        IconButton(
-          onPressed: onLogout,
-          tooltip: 'Cerrar sesión',
-          icon: const Icon(Icons.logout_rounded, color: Colors.white),
+        _HeaderIconButton(
+          icon: Icons.logout_rounded,
+          onTap: onLogout,
         ),
       ],
       child: Column(
@@ -1096,10 +1094,9 @@ class _CreateClassView extends StatelessWidget {
       title: 'Mis Clases',
       subtitle: 'Crear nueva clase',
       actions: [
-        IconButton(
-          onPressed: onLogout,
-          tooltip: 'Cerrar sesión',
-          icon: const Icon(Icons.logout_rounded, color: Colors.white),
+        _HeaderIconButton(
+          icon: Icons.logout_rounded,
+          onTap: onLogout,
         ),
       ],
       child: Column(
@@ -1191,10 +1188,9 @@ class _SessionConfigView extends StatelessWidget {
       subtitle: 'Configurar nueva sesión',
       onBack: onBack,
       actions: [
-        IconButton(
-          onPressed: onLogout,
-          tooltip: 'Cerrar sesión',
-          icon: const Icon(Icons.logout_rounded, color: Colors.white),
+        _HeaderIconButton(
+          icon: Icons.logout_rounded,
+          onTap: onLogout,
         ),
       ],
       child: Column(
@@ -1273,10 +1269,9 @@ class _HistoryClassesView extends StatelessWidget {
       subtitle: 'Consulta las sesiones anteriores',
       onBack: onBack,
       actions: [
-        IconButton(
-          onPressed: onLogout,
-          tooltip: 'Cerrar sesión',
-          icon: const Icon(Icons.logout_rounded, color: Colors.white),
+        _HeaderIconButton(
+          icon: Icons.logout_rounded,
+          onTap: onLogout,
         ),
       ],
       child: Column(
@@ -1348,10 +1343,9 @@ class _HistorySessionsView extends StatelessWidget {
       subtitle: 'Sesiones registradas',
       onBack: onBack,
       actions: [
-        IconButton(
-          onPressed: onLogout,
-          tooltip: 'Cerrar sesión',
-          icon: const Icon(Icons.logout_rounded, color: Colors.white),
+        _HeaderIconButton(
+          icon: Icons.logout_rounded,
+          onTap: onLogout,
         ),
       ],
       child: Column(
@@ -1426,10 +1420,9 @@ class _HistorySessionDetailView extends StatelessWidget {
       subtitle: klass?.name ?? 'Clase',
       onBack: onBack,
       actions: [
-        IconButton(
-          onPressed: onLogout,
-          tooltip: 'Cerrar sesión',
-          icon: const Icon(Icons.logout_rounded, color: Colors.white),
+        _HeaderIconButton(
+          icon: Icons.logout_rounded,
+          onTap: onLogout,
         ),
       ],
       child: Column(
@@ -1575,10 +1568,9 @@ class _ActiveSessionView extends StatelessWidget {
       title: klass?.name ?? 'Sesión activa',
       subtitle: 'Sesión activa',
       actions: [
-        IconButton(
-          onPressed: onLogout,
-          tooltip: 'Cerrar sesión',
-          icon: const Icon(Icons.logout_rounded, color: Colors.white),
+        _HeaderIconButton(
+          icon: Icons.logout_rounded,
+          onTap: onLogout,
         ),
       ],
       child: Column(
@@ -1674,30 +1666,6 @@ class _ActiveSessionView extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 12),
-          Center(
-            child: Column(
-              children: [
-                Text(
-                  'CÓDIGO',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        letterSpacing: 2.2,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white70,
-                      ),
-                ),
-                const SizedBox(height: 4),
-                SelectableText(
-                  qrText,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.1,
-                      ),
-                ),
-              ],
-            ),
-          ),
           const SizedBox(height: 28),
           Text(
             'Añadir por código o correo',
@@ -1720,7 +1688,8 @@ class _ActiveSessionView extends StatelessWidget {
                     fillColor: Colors.white.withOpacity(0.08),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: Colors.white.withOpacity(0.2)),
+                      borderSide:
+                          BorderSide(color: Colors.white.withOpacity(0.2)),
                     ),
                     focusedBorder: const OutlineInputBorder(
                       borderRadius: BorderRadius.all(Radius.circular(14)),
@@ -1734,7 +1703,8 @@ class _ActiveSessionView extends StatelessWidget {
               const SizedBox(width: 12),
               FilledButton(
                 style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                   ),
@@ -1761,8 +1731,8 @@ class _ActiveSessionView extends StatelessWidget {
                 itemBuilder: (_, index) {
                   final suggestion = suggestions[index];
                   return ListTile(
-                    leading:
-                        const Icon(Icons.person_outline, color: Colors.white70),
+                    leading: const Icon(Icons.person_outline,
+                        color: Colors.white70),
                     title: Text(
                       suggestion['name']!.isNotEmpty
                           ? suggestion['name']!
@@ -1922,89 +1892,72 @@ class _TeacherCard extends StatelessWidget {
                   }
                 }
 
-                final headerRowChildren = <Widget>[];
-                if (onBack != null) {
-                  headerRowChildren.add(_HeaderIconButton(
-                    icon: Icons.arrow_back_rounded,
-                    onTap: onBack!,
-                  ));
-                  headerRowChildren.add(SizedBox(width: isCompact ? 10 : 12));
-                }
-
                 final iconSize = isCompact ? 48.0 : 52.0;
-                headerRowChildren.add(Container(
-                  height: iconSize,
-                  width: iconSize,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.16),
-                    borderRadius: BorderRadius.circular(isCompact ? 16 : 18),
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(icon, color: Colors.white, size: isCompact ? 24 : 26),
-                ));
-                headerRowChildren.add(SizedBox(width: isCompact ? 12 : 16));
-                headerRowChildren.add(Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.titleLarge?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ),
-                      if (subtitle.isNotEmpty)
-                        Padding(
-                          padding: EdgeInsets.only(top: isCompact ? 2 : 4),
-                          child: Text(
-                            subtitle,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: Colors.white.withOpacity(0.9),
-                                ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ));
-
-                if (!isCompact && hasActions) {
-                  headerRowChildren
-                      .add(SizedBox(width: spacedActions.length > 1 ? 12 : 8));
-                  headerRowChildren.add(Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: spacedActions,
-                  ));
-                }
 
                 return Padding(
                   padding: EdgeInsets.symmetric(
                     horizontal: horizontalPadding,
                     vertical: verticalPadding,
                   ),
-                  child: Column(
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: headerRowChildren,
+                      if (onBack != null) ...[
+                        _HeaderIconButton(
+                          icon: Icons.arrow_back_rounded,
+                          onTap: onBack!,
+                        ),
+                        SizedBox(width: isCompact ? 10 : 12),
+                      ],
+                      Container(
+                        height: iconSize,
+                        width: iconSize,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.16),
+                          borderRadius:
+                              BorderRadius.circular(isCompact ? 16 : 18),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(icon,
+                            color: Colors.white, size: isCompact ? 24 : 26),
                       ),
-                      if (isCompact && hasActions) ...[
-                        const SizedBox(height: 12),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: spacedActions,
-                          ),
+                      SizedBox(width: isCompact ? 12 : 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            if (subtitle.isNotEmpty)
+                              Padding(
+                                padding:
+                                    EdgeInsets.only(top: isCompact ? 2 : 4),
+                                child: Text(
+                                  subtitle,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                        color: Colors.white.withOpacity(0.9),
+                                      ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (hasActions) ...[
+                        SizedBox(width: isCompact ? 10 : 16),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: spacedActions,
                         ),
                       ],
                     ],
@@ -2040,9 +1993,9 @@ class _HeaderIconButton extends StatelessWidget {
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: Icon(icon, color: Colors.white),
+        child: const Padding(
+          padding: EdgeInsets.all(8),
+          child: Icon(Icons.logout_rounded, color: Colors.white), // Placeholder, overridden by icon param via IconTheme
         ),
       ),
     );
@@ -2083,7 +2036,8 @@ class _ClassTile extends StatelessWidget {
                   color: Colors.white.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(Icons.menu_book_outlined, color: Colors.white),
+                child:
+                    const Icon(Icons.menu_book_outlined, color: Colors.white),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -2155,7 +2109,8 @@ class _HistorySessionTile extends StatelessWidget {
                   color: Colors.white.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: const Icon(Icons.event_note_rounded, color: Colors.white),
+                child:
+                    const Icon(Icons.event_note_rounded, color: Colors.white),
               ),
               const SizedBox(width: 16),
               Expanded(
@@ -2239,5 +2194,6 @@ class _SummaryInfoCard extends StatelessWidget {
     );
   }
 }
+
 
 
