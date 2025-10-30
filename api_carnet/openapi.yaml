@@ -239,6 +239,22 @@ components:
         teacherCode: { type: string }
         startedAt: { type: integer }
         expiresAt: { type: integer, nullable: true }
+        offeringId: { type: string, format: uuid, nullable: true }
+    ClassOffering:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        createdAt: { type: integer, nullable: true }
+        sessionsCount: { type: integer }
+        lastSessionAt: { type: integer, nullable: true }
+    ClassSessionSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        startedAt: { type: integer }
+        expiresAt: { type: integer, nullable: true }
+        attendeeCount: { type: integer }
     StartSessionRequest:
       type: object
       properties:
@@ -527,6 +543,83 @@ paths:
                   - $ref: '#/components/schemas/VerifyResponseValid'
                   - $ref: '#/components/schemas/VerifyResponseInvalid'
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /prof/classes:
+    get:
+      tags: [Professor]
+      operationId: profListClasses
+      summary: Listar clases del docente
+      security: [ { bearerAuth: [] } ]
+      x-roles: [teacher]
+      responses:
+        '200':
+          description: Lista de clases del docente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ClassOffering' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/ServerError' }
+    post:
+      tags: [Professor]
+      operationId: profCreateClass
+      summary: Crear una nueva clase (solo teacher)
+      security: [ { bearerAuth: [] } ]
+      x-roles: [teacher]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+              required: [name]
+      responses:
+        '201':
+          description: Clase creada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  class: { $ref: '#/components/schemas/ClassOffering' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/ServerError' }
+  /prof/classes/{id}/sessions:
+    get:
+      tags: [Professor]
+      operationId: profClassSessions
+      summary: Listar sesiones de una clase
+      security: [ { bearerAuth: [] } ]
+      x-roles: [teacher]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Sesiones de la clase
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  offering: { $ref: '#/components/schemas/ClassOffering' }
+                  sessions:
+                    type: array
+                    items: { $ref: '#/components/schemas/ClassSessionSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/ServerError' }
   /prof/start-session:
     post:
