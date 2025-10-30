@@ -42,6 +42,16 @@ export async function endPool() {
 
 export async function ensureSchema() {
   const sql = `
+  create extension if not exists "pgcrypto";
+
+  create table if not exists class_offerings (
+    id uuid primary key default gen_random_uuid(),
+    teacher_code text not null references users(code) on delete cascade,
+    name text not null,
+    archived boolean not null default false,
+    created_at timestamptz not null default now()
+  );
+
   create table if not exists users (
     code text primary key,
     email text unique not null,
@@ -64,7 +74,7 @@ export async function ensureSchema() {
     teacher_code text not null references users(code) on delete cascade,
     started_at timestamptz not null default now(),
     expires_at timestamptz,
-    offering_id uuid
+    offering_id uuid references class_offerings(id) on delete set null
   );
 
   create table if not exists attendance (
@@ -139,6 +149,20 @@ export async function ensureSchema() {
   `;
   const p = await getPool();
   await p.query(sql);
+
+  try {
+    await p.query(
+      `alter table class_sessions
+         add constraint class_sessions_offering_fk
+         foreign key (offering_id)
+         references class_offerings(id) on delete set null`
+    );
+  } catch (err) {
+    const code = err && typeof err === 'object' ? err.code : null;
+    if (code !== '42P16' && code !== '42710') {
+      throw err;
+    }
+  }
 
   // One-time migration: fill expires_on from legacy expires_at text (DD/MM/YYYY)
   try {
@@ -279,6 +303,18 @@ function mapSessionRow(row) {
     teacherCode: row.teacher_code,
     startedAt: row.started_at ? Math.floor(new Date(row.started_at).getTime() / 1000) : undefined,
     expiresAt: row.expires_at ? Math.floor(new Date(row.expires_at).getTime() / 1000) : null,
+    offeringId: row.offering_id || null,
+  };
+}
+
+function mapOfferingRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    teacherCode: row.teacher_code,
+    name: row.name,
+    archived: row.archived === true,
+    createdAt: row.created_at ? Math.floor(new Date(row.created_at).getTime() / 1000) : undefined,
   };
 }
 
@@ -291,6 +327,68 @@ export async function createSessionWithId(id, teacherCode, startedAt, expiresAt,
     [id, teacherCode, sa, ea, offeringId || null]
   );
   return mapSessionRow(rows[0]);
+}
+
+export async function createClassOffering(teacherCode, name) {
+  if (!teacherCode || !name) return null;
+  const id = uuidv4();
+  const p = await getPool();
+  const { rows } = await p.query(
+    'insert into class_offerings (id, teacher_code, name) values ($1,$2,$3) returning *',
+    [id, teacherCode, name]
+  );
+  return mapOfferingRow(rows[0] || null);
+}
+
+export async function listClassOfferingsWithStats(teacherCode) {
+  const p = await getPool();
+  const { rows } = await p.query(
+    `select o.id, o.teacher_code, o.name, o.archived, o.created_at,
+            count(s.*)::int as sessions_count,
+            max(s.started_at) as last_session_at
+       from class_offerings o
+  left join class_sessions s on s.offering_id = o.id
+      where o.teacher_code=$1 and o.archived = false
+   group by o.id, o.teacher_code, o.name, o.archived, o.created_at
+   order by o.created_at desc`,
+    [teacherCode]
+  );
+  return rows.map((row) => ({
+    ...mapOfferingRow(row),
+    sessionsCount: Number(row.sessions_count ?? 0),
+    lastSessionAt: row.last_session_at
+        ? Math.floor(new Date(row.last_session_at).getTime() / 1000)
+        : null,
+  }));
+}
+
+export async function getClassOfferingForTeacher(offeringId, teacherCode) {
+  if (!offeringId || !teacherCode) return null;
+  const p = await getPool();
+  const { rows } = await p.query(
+    'select * from class_offerings where id=$1 and teacher_code=$2 and archived = false',
+    [offeringId, teacherCode]
+  );
+  return mapOfferingRow(rows[0] || null);
+}
+
+export async function listSessionsForOffering(offeringId, teacherCode) {
+  if (!offeringId || !teacherCode) return [];
+  const p = await getPool();
+  const { rows } = await p.query(
+    `select s.id, s.teacher_code, s.started_at, s.expires_at, s.offering_id,
+            count(a.*)::int as attendee_count
+       from class_sessions s
+  left join attendance a on a.session_id = s.id
+      where s.offering_id=$1 and s.teacher_code=$2
+   group by s.id, s.teacher_code, s.started_at, s.expires_at, s.offering_id
+   order by s.started_at desc`,
+    [offeringId, teacherCode]
+  );
+  return rows.map((row) => ({
+    ...mapSessionRow(row),
+    attendeeCount: Number(row.attendee_count ?? 0),
+  }));
 }
 
 export async function endSessionNow(sessionId, nowTs) {
