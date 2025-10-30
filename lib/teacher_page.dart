@@ -501,7 +501,8 @@ class _TeacherPageState extends State<TeacherPage> {
     FocusScope.of(context).unfocus();
     try {
       final minutes = int.tryParse(_durationController.text.trim());
-      final ttlSeconds = (minutes != null && minutes > 0) ? minutes * 60 : 600;
+      final ttlSeconds =
+          (minutes != null && minutes > 0) ? minutes * 60 : 600;
       final resp = await http.post(
         Uri.parse('$_baseUrl/prof/start-session'),
         headers: {
@@ -1900,33 +1901,49 @@ class _TeacherCard extends StatelessWidget {
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
             decoration: BoxDecoration(
               gradient: _headerGradient,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (onBack != null) ...[
-                  _HeaderIconButton(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isCompact = constraints.maxWidth < 420;
+                final hasActions = actions != null && actions!.isNotEmpty;
+                final horizontalPadding = isCompact ? 20.0 : 24.0;
+                final verticalPadding = isCompact ? 18.0 : 20.0;
+
+                final spacedActions = <Widget>[];
+                if (hasActions) {
+                  for (var i = 0; i < actions!.length; i++) {
+                    if (i > 0) {
+                      spacedActions.add(SizedBox(width: isCompact ? 8 : 12));
+                    }
+                    spacedActions.add(actions![i]);
+                  }
+                }
+
+                final headerRowChildren = <Widget>[];
+                if (onBack != null) {
+                  headerRowChildren.add(_HeaderIconButton(
                     icon: Icons.arrow_back_rounded,
                     onTap: onBack!,
-                  ),
-                  const SizedBox(width: 12),
-                ],
-                Container(
-                  height: 52,
-                  width: 52,
+                  ));
+                  headerRowChildren.add(SizedBox(width: isCompact ? 10 : 12));
+                }
+
+                final iconSize = isCompact ? 48.0 : 52.0;
+                headerRowChildren.add(Container(
+                  height: iconSize,
+                  width: iconSize,
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.16),
-                    borderRadius: BorderRadius.circular(18),
+                    borderRadius: BorderRadius.circular(isCompact ? 16 : 18),
                   ),
                   alignment: Alignment.center,
-                  child: Icon(icon, color: Colors.white, size: 26),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
+                  child: Icon(icon, color: Colors.white, size: isCompact ? 24 : 26),
+                ));
+                headerRowChildren.add(SizedBox(width: isCompact ? 12 : 16));
+                headerRowChildren.add(Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -1942,7 +1959,7 @@ class _TeacherCard extends StatelessWidget {
                       ),
                       if (subtitle.isNotEmpty)
                         Padding(
-                          padding: const EdgeInsets.only(top: 4),
+                          padding: EdgeInsets.only(top: isCompact ? 2 : 4),
                           child: Text(
                             subtitle,
                             maxLines: 2,
@@ -1954,15 +1971,46 @@ class _TeacherCard extends StatelessWidget {
                         ),
                     ],
                   ),
-                ),
-                if (actions != null && actions!.isNotEmpty) ...[
-                  const SizedBox(width: 12),
-                  Row(
+                ));
+
+                if (!isCompact && hasActions) {
+                  headerRowChildren
+                      .add(SizedBox(width: spacedActions.length > 1 ? 12 : 8));
+                  headerRowChildren.add(Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: actions!,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: spacedActions,
+                  ));
+                }
+
+                return Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: horizontalPadding,
+                    vertical: verticalPadding,
                   ),
-                ],
-              ],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: headerRowChildren,
+                      ),
+                      if (isCompact && hasActions) ...[
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: spacedActions,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              },
             ),
           ),
           Padding(
@@ -2191,4 +2239,5 @@ class _SummaryInfoCard extends StatelessWidget {
     );
   }
 }
+
 
