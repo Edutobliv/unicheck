@@ -474,6 +474,30 @@ class _CarnetPageState extends State<CarnetPage> {
     Navigator.of(context).pushReplacementNamed('/login');
   }
 
+  Future<void> _confirmLogout() async {
+    if (!mounted) return;
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cerrar sesion'),
+        content: const Text(
+          '¿Quieres cerrar sesion en este dispositivo?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Cerrar sesion'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || shouldLogout != true) return;
+    await _logout();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -528,7 +552,7 @@ class _CarnetPageState extends State<CarnetPage> {
         ),
         IconButton(
           tooltip: 'Cerrar sesion',
-          onPressed: _logout,
+          onPressed: _confirmLogout,
           icon: const Icon(Icons.logout),
         ),
       ],
@@ -769,21 +793,22 @@ class _InfoPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    const accent = BrandColors.primaryOnLight;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: theme.colorScheme.primary.withValues(alpha: 0.1),
+        color: accent.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(BrandRadii.pill),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: theme.colorScheme.primary),
+          Icon(icon, size: 16, color: accent),
           const SizedBox(width: 6),
           Text(
             label,
             style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.primary,
+              color: accent,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -800,7 +825,7 @@ class _QrStatusPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final bool expiring = secondsLeft <= 10;
-    final color = expiring ? theme.colorScheme.error : theme.colorScheme.primary;
+    final color = expiring ? theme.colorScheme.error : BrandColors.primaryOnLight;
     return FrostedPanel(
       padding: const EdgeInsets.fromLTRB(32, 28, 32, 30),
       borderRadius: BrandRadii.large,
@@ -913,7 +938,7 @@ class _DetailRow extends StatelessWidget {
       child: Row(
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 18, color: theme.colorScheme.primary),
+            Icon(icon, size: 18, color: BrandColors.primaryOnLight),
             const SizedBox(width: BrandSpacing.xs),
           ],
           Text(
