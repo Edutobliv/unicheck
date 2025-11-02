@@ -289,22 +289,24 @@ class _RegisterPageState extends State<RegisterPage> {
         if (!mounted) return;
         Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
       } else {
-        String msg = 'Error al registrar';
+        String msg = 'No pudimos completar el registro. Intenta nuevamente.';
         try {
           final body = jsonDecode(resp.body) as Map<String, dynamic>;
           final err = (body['message'] ?? body['error'])?.toString();
           if (err != null && err.isNotEmpty) {
-            msg = '$err (Origen: backend ${resp.statusCode})';
-          } else {
-            msg = 'Error (Origen: backend ${resp.statusCode})';
+            msg = err;
           }
         } catch (_) {}
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       }
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error de red (Origen: red): $e')),
+        const SnackBar(
+          content: Text(
+            'No se pudo conectar con el servidor. Verifica tu conexion e intenta nuevamente.',
+          ),
+        ),
       );
     } finally {
       if (mounted) {
@@ -738,20 +740,26 @@ class _PhotoPickerTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return GestureDetector(
-      onTap: onPickPhoto,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: BrandGradients.surface,
-          borderRadius: BorderRadius.circular(BrandRadii.large),
-          border: Border.all(
-            color: theme.colorScheme.outline.withValues(alpha: 0.4),
+    return Semantics(
+      button: true,
+      enabled: true,
+      label: photoBytes == null
+          ? 'Subir foto del estudiante'
+          : 'Cambiar foto del estudiante',
+      child: GestureDetector(
+        onTap: onPickPhoto,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: BrandGradients.surface,
+            borderRadius: BorderRadius.circular(BrandRadii.large),
+            border: Border.all(
+              color: theme.colorScheme.outline.withValues(alpha: 0.4),
+            ),
           ),
-        ),
-        child: photoBytes == null
-            ? Column(
+          child: photoBytes == null
+              ? Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
@@ -781,16 +789,18 @@ class _PhotoPickerTile extends StatelessWidget {
                   ),
                 ],
               )
-            : ClipRRect(
-                borderRadius: BorderRadius.circular(BrandRadii.medium),
-                child: AspectRatio(
-                  aspectRatio: 3 / 4,
-                  child: Image.memory(
-                    photoBytes!,
-                    fit: BoxFit.cover,
+              : ClipRRect(
+                  borderRadius: BorderRadius.circular(BrandRadii.medium),
+                  child: AspectRatio(
+                    aspectRatio: 3 / 4,
+                    child: Image.memory(
+                      photoBytes!,
+                      fit: BoxFit.cover,
+                      semanticLabel: 'Vista previa de la foto del estudiante',
+                    ),
                   ),
                 ),
-              ),
+        ),
       ),
     );
   }
