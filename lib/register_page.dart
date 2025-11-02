@@ -289,22 +289,24 @@ class _RegisterPageState extends State<RegisterPage> {
         if (!mounted) return;
         Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
       } else {
-        String msg = 'Error al registrar';
+        String msg = 'No pudimos completar el registro. Intenta nuevamente.';
         try {
           final body = jsonDecode(resp.body) as Map<String, dynamic>;
           final err = (body['message'] ?? body['error'])?.toString();
           if (err != null && err.isNotEmpty) {
-            msg = '$err (Origen: backend ${resp.statusCode})';
-          } else {
-            msg = 'Error (Origen: backend ${resp.statusCode})';
+            msg = err;
           }
         } catch (_) {}
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       }
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error de red (Origen: red): $e')),
+        const SnackBar(
+          content: Text(
+            'No se pudo conectar con el servidor. Verifica tu conexion e intenta nuevamente.',
+          ),
+        ),
       );
     } finally {
       if (mounted) {

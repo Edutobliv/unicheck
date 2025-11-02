@@ -79,8 +79,7 @@ class _LoginPageState extends State<LoginPage> {
         final codeOk = RegExp(r'^\d{4,}$').hasMatch(input);
         if (!codeOk) {
           setState(() {
-            _error =
-                'El codigo debe ser numerico (min. 4 digitos). Origen: validacion local.';
+            _error = 'Ingresa un codigo numerico de al menos 4 digitos.';
           });
           return;
         }
@@ -160,14 +159,20 @@ class _LoginPageState extends State<LoginPage> {
         }
         Navigator.of(context).pushReplacementNamed(route);
       } else {
-        String msg = 'Credenciales invalidas';
+        String msg;
+        if (resp.statusCode == 401) {
+          msg =
+              'Los datos ingresados no coinciden. Revisa tu correo o codigo y la contrasena.';
+        } else if (resp.statusCode >= 500) {
+          msg = 'El servicio no respondio. Intenta nuevamente en unos segundos.';
+        } else {
+          msg = 'No pudimos completar el inicio de sesion. Intenta nuevamente.';
+        }
         try {
           final body = jsonDecode(resp.body) as Map<String, dynamic>;
           final err = (body['message'] ?? body['error'])?.toString();
           if (err != null && err.isNotEmpty) {
-            msg = '$err (Origen: backend ${resp.statusCode})';
-          } else {
-            msg = 'Error (Origen: backend ${resp.statusCode})';
+            msg = err;
           }
         } catch (_) {}
         setState(() {
@@ -177,9 +182,10 @@ class _LoginPageState extends State<LoginPage> {
     } on TimeoutException catch (_) {
       _startRetryCountdown();
       return;
-    } catch (e) {
+    } catch (_) {
       setState(() {
-        _error = 'Error de red: ${e.toString()} (Origen: red)';
+        _error =
+            'No se pudo conectar con el servidor. Verifica tu conexion e intenta nuevamente.';
       });
     } finally {
       if (mounted) {
@@ -196,7 +202,8 @@ class _LoginPageState extends State<LoginPage> {
 
     setState(() {
       _loading = false;
-      _error = 'Estamos iniciando el servidor... reintento en $_retrySeconds s';
+      _error =
+          'El servicio esta tardando en responder. Reintento automatico en $_retrySeconds s.';
     });
 
     _retryTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -209,15 +216,14 @@ class _LoginPageState extends State<LoginPage> {
         timer.cancel();
         _retrySeconds = 0;
         setState(() {
-          _error =
-              'Estamos iniciando el servidor... reintento en $_retrySeconds s';
+          _error = 'Reintentando...';
         });
         _login();
       } else {
         setState(() {
           _retrySeconds -= 1;
           _error =
-              'Estamos iniciando el servidor... reintento en $_retrySeconds s';
+              'El servicio esta tardando en responder. Reintento automatico en $_retrySeconds s.';
         });
       }
     });
