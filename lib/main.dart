@@ -1019,25 +1019,40 @@ class _FotoBoxState extends State<_FotoBox> {
             fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
             gaplessPlayback: true,
+            semanticLabel: 'Foto del estudiante',
           )
-        : Image.asset(widget.photoAssetPath, fit: BoxFit.cover);
+        : Image.asset(
+            widget.photoAssetPath,
+            fit: BoxFit.cover,
+            semanticLabel: 'Foto del estudiante',
+          );
     final outerRadius = BorderRadius.circular(22);
     final innerRadius = BorderRadius.circular(18);
-    return GestureDetector(
-      onTap: widget.onTap,
-      child: Container(
-        width: widget.width,
-        height: widget.height,
-        decoration: BoxDecoration(
-          gradient: BrandGradients.surface,
-          borderRadius: outerRadius,
-          border: Border.all(
-            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.22),
-            width: 1.4,
+    final interactive = widget.onTap != null;
+    return Semantics(
+      button: interactive,
+      enabled: interactive,
+      label: interactive ? 'Actualizar foto del carnet' : 'Foto del carnet',
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Container(
+          width: widget.width,
+          height: widget.height,
+          decoration: BoxDecoration(
+            gradient: BrandGradients.surface,
+            borderRadius: outerRadius,
+            border: Border.all(
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.22),
+              width: 1.4,
+            ),
+            boxShadow: BrandShadows.surface,
           ),
-          boxShadow: BrandShadows.surface,
+          child: Semantics(
+            image: true,
+            label: 'Foto del estudiante',
+            child: ClipRRect(borderRadius: innerRadius, child: image),
+          ),
         ),
-        child: ClipRRect(borderRadius: innerRadius, child: image),
       ),
     );
   }
