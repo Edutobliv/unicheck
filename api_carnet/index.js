@@ -296,9 +296,15 @@ app.post("/auth/login", async (req, res) => {
       user = await getUserByCode(code);
     }
 
-    if (!user) return res.status(401).json({ error: "invalid_credentials", message: "Usuario o contraseÃ±a incorrectos" });
+    if (!user)
+      return res
+        .status(401)
+        .json({ error: "invalid_credentials", message: "Usuario o contraseña incorrectos" });
     const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) return res.status(401).json({ error: "invalid_credentials", message: "Usuario o contraseÃ±a incorrectos" });
+    if (!ok)
+      return res
+        .status(401)
+        .json({ error: "invalid_credentials", message: "Usuario o contraseña incorrectos" });
 
     // Auto-renew student expiry to 6 months if missing or expired
     try {
