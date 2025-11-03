@@ -75,8 +75,8 @@ class _CarnetPageState extends State<CarnetPage> {
   Map<String, dynamic>? _student;
   String? _ephemeralCode;
   final ImagePicker _picker = ImagePicker();
-  String?
-  _photoEnsuredForCode; // evita solicitar la foto muchas veces por sesiÃƒÂ³n
+  String? _photoEnsuredForCode; // evita solicitar la foto muchas veces por sesión
+  bool _refreshingQr = false;
 
 
 
@@ -116,6 +116,18 @@ class _CarnetPageState extends State<CarnetPage> {
   }
 
   Future<void> _fetchQr() async {
+    if (_refreshingQr) return;
+    _timer?.cancel();
+    _timer = null;
+    if (mounted) {
+      setState(() {
+        _refreshingQr = true;
+        _secondsLeft = 0;
+      });
+    } else {
+      _refreshingQr = true;
+      _secondsLeft = 0;
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
@@ -183,6 +195,14 @@ class _CarnetPageState extends State<CarnetPage> {
       }
     } catch (e) {
       _toast('Error de red: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _refreshingQr = false;
+        });
+      } else {
+        _refreshingQr = false;
+      }
     }
   }
 
@@ -474,6 +494,30 @@ class _CarnetPageState extends State<CarnetPage> {
     Navigator.of(context).pushReplacementNamed('/login');
   }
 
+  Future<void> _confirmLogout() async {
+    if (!mounted) return;
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cerrar sesion'),
+        content: const Text(
+          '¿Quieres cerrar sesion en este dispositivo?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Cerrar sesion'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || shouldLogout != true) return;
+    await _logout();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -528,7 +572,7 @@ class _CarnetPageState extends State<CarnetPage> {
         ),
         IconButton(
           tooltip: 'Cerrar sesion',
-          onPressed: _logout,
+          onPressed: _confirmLogout,
           icon: const Icon(Icons.logout),
         ),
       ],
@@ -549,6 +593,7 @@ class _CarnetPageState extends State<CarnetPage> {
               const SizedBox(height: BrandSpacing.lg),
               _QrStatusPanel(
                 secondsLeft: _secondsLeft,
+                refreshing: _refreshingQr,
                 onRefresh: _fetchQr,
               ),
               const SizedBox(height: BrandSpacing.lg),
@@ -769,21 +814,22 @@ class _InfoPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    const accent = BrandColors.primaryOnLight;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: theme.colorScheme.primary.withValues(alpha: 0.1),
+        color: accent.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(BrandRadii.pill),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: theme.colorScheme.primary),
+          Icon(icon, size: 16, color: accent),
           const SizedBox(width: 6),
           Text(
             label,
             style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.primary,
+              color: accent,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -794,13 +840,18 @@ class _InfoPill extends StatelessWidget {
 }
 class _QrStatusPanel extends StatelessWidget {
   final int secondsLeft;
+  final bool refreshing;
   final VoidCallback onRefresh;
-  const _QrStatusPanel({required this.secondsLeft, required this.onRefresh});
+  const _QrStatusPanel({
+    required this.secondsLeft,
+    required this.refreshing,
+    required this.onRefresh,
+  });
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final bool expiring = secondsLeft <= 10;
-    final color = expiring ? theme.colorScheme.error : theme.colorScheme.primary;
+    final color = expiring ? theme.colorScheme.error : BrandColors.primaryOnLight;
     return FrostedPanel(
       padding: const EdgeInsets.fromLTRB(32, 28, 32, 30),
       borderRadius: BrandRadii.large,
@@ -838,9 +889,22 @@ class _QrStatusPanel extends StatelessWidget {
           ),
           const SizedBox(height: BrandSpacing.md),
           PrimaryButton(
-            onPressed: onRefresh,
+            onPressed: refreshing ? null : onRefresh,
             expand: false,
-            child: const Text('Generar nuevo QR'),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: refreshing
+                  ? const SizedBox(
+                      key: ValueKey('qr-loading'),
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Generar nuevo QR'),
+            ),
           ),
         ],
       ),
@@ -913,7 +977,7 @@ class _DetailRow extends StatelessWidget {
       child: Row(
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 18, color: theme.colorScheme.primary),
+            Icon(icon, size: 18, color: BrandColors.primaryOnLight),
             const SizedBox(width: BrandSpacing.xs),
           ],
           Text(
@@ -994,25 +1058,40 @@ class _FotoBoxState extends State<_FotoBox> {
             fit: BoxFit.cover,
             filterQuality: FilterQuality.high,
             gaplessPlayback: true,
+            semanticLabel: 'Foto del estudiante',
           )
-        : Image.asset(widget.photoAssetPath, fit: BoxFit.cover);
+        : Image.asset(
+            widget.photoAssetPath,
+            fit: BoxFit.cover,
+            semanticLabel: 'Foto del estudiante',
+          );
     final outerRadius = BorderRadius.circular(22);
     final innerRadius = BorderRadius.circular(18);
-    return GestureDetector(
-      onTap: widget.onTap,
-      child: Container(
-        width: widget.width,
-        height: widget.height,
-        decoration: BoxDecoration(
-          gradient: BrandGradients.surface,
-          borderRadius: outerRadius,
-          border: Border.all(
-            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.22),
-            width: 1.4,
+    final interactive = widget.onTap != null;
+    return Semantics(
+      button: interactive,
+      enabled: interactive,
+      label: interactive ? 'Actualizar foto del carnet' : 'Foto del carnet',
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Container(
+          width: widget.width,
+          height: widget.height,
+          decoration: BoxDecoration(
+            gradient: BrandGradients.surface,
+            borderRadius: outerRadius,
+            border: Border.all(
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.22),
+              width: 1.4,
+            ),
+            boxShadow: BrandShadows.surface,
           ),
-          boxShadow: BrandShadows.surface,
+          child: Semantics(
+            image: true,
+            label: 'Foto del estudiante',
+            child: ClipRRect(borderRadius: innerRadius, child: image),
+          ),
         ),
-        child: ClipRRect(borderRadius: innerRadius, child: image),
       ),
     );
   }

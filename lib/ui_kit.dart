@@ -432,23 +432,23 @@ class InfoBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    const accent = BrandColors.primaryOnLight;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
       decoration: BoxDecoration(
-        color: scheme.primary.withValues(alpha: 0.12),
+        color: accent.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(BrandRadii.pill),
-        border: Border.all(color: scheme.primary.withValues(alpha: 0.28)),
+        border: Border.all(color: accent.withValues(alpha: 0.28)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18, color: scheme.primary),
+          Icon(icon, size: 18, color: accent),
           const SizedBox(width: 8),
           Text(
             label,
             style: theme.textTheme.labelLarge?.copyWith(
-                  color: scheme.primary,
+                  color: accent,
                   letterSpacing: 0.2,
                 ),
           ),
