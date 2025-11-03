@@ -75,8 +75,8 @@ class _CarnetPageState extends State<CarnetPage> {
   Map<String, dynamic>? _student;
   String? _ephemeralCode;
   final ImagePicker _picker = ImagePicker();
-  String?
-  _photoEnsuredForCode; // evita solicitar la foto muchas veces por sesiÃƒÂ³n
+  String? _photoEnsuredForCode; // evita solicitar la foto muchas veces por sesión
+  bool _refreshingQr = false;
 
 
 
@@ -116,6 +116,18 @@ class _CarnetPageState extends State<CarnetPage> {
   }
 
   Future<void> _fetchQr() async {
+    if (_refreshingQr) return;
+    _timer?.cancel();
+    _timer = null;
+    if (mounted) {
+      setState(() {
+        _refreshingQr = true;
+        _secondsLeft = 0;
+      });
+    } else {
+      _refreshingQr = true;
+      _secondsLeft = 0;
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
@@ -183,6 +195,14 @@ class _CarnetPageState extends State<CarnetPage> {
       }
     } catch (e) {
       _toast('Error de red: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _refreshingQr = false;
+        });
+      } else {
+        _refreshingQr = false;
+      }
     }
   }
 
@@ -573,6 +593,7 @@ class _CarnetPageState extends State<CarnetPage> {
               const SizedBox(height: BrandSpacing.lg),
               _QrStatusPanel(
                 secondsLeft: _secondsLeft,
+                refreshing: _refreshingQr,
                 onRefresh: _fetchQr,
               ),
               const SizedBox(height: BrandSpacing.lg),
@@ -819,8 +840,13 @@ class _InfoPill extends StatelessWidget {
 }
 class _QrStatusPanel extends StatelessWidget {
   final int secondsLeft;
+  final bool refreshing;
   final VoidCallback onRefresh;
-  const _QrStatusPanel({required this.secondsLeft, required this.onRefresh});
+  const _QrStatusPanel({
+    required this.secondsLeft,
+    required this.refreshing,
+    required this.onRefresh,
+  });
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -863,9 +889,22 @@ class _QrStatusPanel extends StatelessWidget {
           ),
           const SizedBox(height: BrandSpacing.md),
           PrimaryButton(
-            onPressed: onRefresh,
+            onPressed: refreshing ? null : onRefresh,
             expand: false,
-            child: const Text('Generar nuevo QR'),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: refreshing
+                  ? const SizedBox(
+                      key: ValueKey('qr-loading'),
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Generar nuevo QR'),
+            ),
           ),
         ],
       ),
