@@ -4,6 +4,7 @@ class BrandColors {
   static const Color primary = Color(0xFF0FD7B9);
   static const Color primaryBright = Color(0xFF05E2CF);
   static const Color primaryDark = Color(0xFF02BFAE);
+  static const Color primaryOnLight = Color(0xFF00856C);
   static const Color aqua = Color(0xFF00C0DC);
   static const Color navy = Color(0xFF0E1A2C);
   static const Color navySoft = Color(0xFF152941);
