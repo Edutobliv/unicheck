@@ -311,6 +311,60 @@ class _TeacherPageState extends State<TeacherPage> {
     }
   }
 
+  Future<bool> _confirmDeleteClass(String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar clase'),
+        content: Text('¿Eliminar la clase "$name"? Puedes crearla de nuevo cuando quieras.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
+  }
+
+  Future<void> _deleteClass(TeacherClass klass) async {
+    final confirmed = await _confirmDeleteClass(klass.name);
+    if (!confirmed) return;
+
+    final token = await _token();
+    if (token == null) return;
+    try {
+      final resp = await http.delete(
+        Uri.parse('$_baseUrl/prof/classes/${klass.id}'),
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (resp.statusCode == 200) {
+        await _loadClasses();
+        if (!mounted) return;
+        if (_selectedClass?.id == klass.id || _historyClass?.id == klass.id) {
+          _goToOverview();
+        }
+        if (_activeClass?.id == klass.id) {
+          setState(() => _activeClass = null);
+        }
+        _toast('Clase eliminada');
+      } else if (resp.statusCode == 404) {
+        _toast('Clase no encontrada');
+      } else {
+        _toast('No se pudo eliminar la clase (${resp.statusCode})');
+      }
+    } catch (e) {
+      _toast('Error al eliminar clase: $e');
+    }
+  }
+
   void _selectClass(TeacherClass klass) {
     FocusScope.of(context).unfocus();
     setState(() {
@@ -662,6 +716,35 @@ class _TeacherPageState extends State<TeacherPage> {
     }
   }
 
+  Future<void> _removeHistoryAttendee(SessionAttendee attendee) async {
+    final sessionId = _historySelectedSession?.id;
+    if (sessionId == null) return;
+    final token = await _token();
+    if (token == null) return;
+    try {
+      final resp = await http.delete(
+        Uri.parse('$_baseUrl/prof/attendance'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({'sessionId': sessionId, 'studentCode': attendee.code}),
+      );
+      if (resp.statusCode == 200) {
+        if (!mounted) return;
+        _toast('Asistente eliminado');
+        final summary = _historySelectedSession;
+        if (summary != null) {
+          await _openSessionDetail(summary);
+        }
+      } else {
+        _toast('No se pudo eliminar (${resp.statusCode})');
+      }
+    } catch (e) {
+      _toast('Error: $e');
+    }
+  }
+
   Future<void> _addByCode(String code) async {
     final id = _sessionId;
     if (id == null) return;
@@ -844,6 +927,7 @@ class _TeacherPageState extends State<TeacherPage> {
           onCreateClass: _openCreateClass,
           onViewHistory: _openHistory,
           onSelectClass: _selectClass,
+          onDeleteClass: _deleteClass,
           onLogout: _logout,
         );
         break;
@@ -871,6 +955,7 @@ class _TeacherPageState extends State<TeacherPage> {
           loading: _loadingClasses,
           onBack: _goToOverview,
           onSelect: _openHistorySessions,
+          onDeleteClass: _deleteClass,
           onLogout: _logout,
         );
         break;
@@ -904,6 +989,8 @@ class _TeacherPageState extends State<TeacherPage> {
             _historySelectedSession?.startedAt,
             _historySelectedSession?.expiresAt,
           ),
+          onRemoveAttendee: _removeHistoryAttendee,
+          confirmDelete: _confirmDelete,
           onBack: () {
             setState(() {
               _view = _TeacherView.historySessions;
@@ -969,6 +1056,7 @@ class _OverviewView extends StatelessWidget {
     required this.onCreateClass,
     required this.onViewHistory,
     required this.onSelectClass,
+    required this.onDeleteClass,
     required this.onLogout,
   });
 
@@ -977,6 +1065,7 @@ class _OverviewView extends StatelessWidget {
   final VoidCallback onCreateClass;
   final VoidCallback onViewHistory;
   final ValueChanged<TeacherClass> onSelectClass;
+  final Future<void> Function(TeacherClass) onDeleteClass;
   final VoidCallback onLogout;
 
   String _sessionsLabel(int count) {
@@ -1075,6 +1164,7 @@ class _OverviewView extends StatelessWidget {
                 title: klass.name,
                 subtitle: _sessionsLabel(klass.sessionsCount),
                 onTap: () => onSelectClass(klass),
+                onDelete: () => onDeleteClass(klass),
               ),
               const SizedBox(height: 12),
             ],
@@ -1251,6 +1341,7 @@ class _HistoryClassesView extends StatelessWidget {
     required this.loading,
     required this.onBack,
     required this.onSelect,
+    required this.onDeleteClass,
     required this.onLogout,
   });
 
@@ -1258,6 +1349,7 @@ class _HistoryClassesView extends StatelessWidget {
   final bool loading;
   final VoidCallback onBack;
   final ValueChanged<TeacherClass> onSelect;
+  final Future<void> Function(TeacherClass) onDeleteClass;
   final VoidCallback onLogout;
 
   String _sessionsLabel(int count) {
@@ -1300,6 +1392,7 @@ class _HistoryClassesView extends StatelessWidget {
                 title: klass.name,
                 subtitle: _sessionsLabel(klass.sessionsCount),
                 onTap: () => onSelect(klass),
+                onDelete: () => onDeleteClass(klass),
               ),
               const SizedBox(height: 12),
             ],
@@ -1390,6 +1483,8 @@ class _HistorySessionDetailView extends StatelessWidget {
     required this.dateLabel,
     required this.startLabel,
     required this.durationLabel,
+    required this.onRemoveAttendee,
+    required this.confirmDelete,
     required this.onBack,
     required this.onLogout,
   });
@@ -1401,6 +1496,8 @@ class _HistorySessionDetailView extends StatelessWidget {
   final String dateLabel;
   final String startLabel;
   final String durationLabel;
+  final Future<void> Function(SessionAttendee attendee) onRemoveAttendee;
+  final Future<bool> Function(String) confirmDelete;
   final VoidCallback onBack;
   final VoidCallback onLogout;
 
@@ -1502,6 +1599,18 @@ class _HistorySessionDetailView extends StatelessWidget {
                     subtitle: Text(
                       "${attendee.email ?? ''} · $timeLabel",
                       style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                    ),
+                    trailing: IconButton(
+                      tooltip: 'Eliminar',
+                      color: Colors.white70,
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () async {
+                        final label = attendee.name?.isNotEmpty == true
+                            ? attendee.name!
+                            : attendee.code;
+                        final ok = await confirmDelete(label);
+                        if (ok) await onRemoveAttendee(attendee);
+                      },
                     ),
                   ),
                 );
@@ -1998,11 +2107,13 @@ class _ClassTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.onDelete,
   });
 
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final Future<void> Function()? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -2054,7 +2165,21 @@ class _ClassTile extends StatelessWidget {
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: Colors.white70),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (onDelete != null) ...[
+                    IconButton(
+                      tooltip: 'Eliminar clase',
+                      icon: const Icon(Icons.delete_outline),
+                      color: Colors.white70,
+                      onPressed: () => onDelete?.call(),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  const Icon(Icons.chevron_right_rounded, color: Colors.white70),
+                ],
+              ),
             ],
           ),
         ),

@@ -340,6 +340,16 @@ export async function createClassOffering(teacherCode, name) {
   return mapOfferingRow(rows[0] || null);
 }
 
+export async function archiveClassOffering(offeringId, teacherCode) {
+  if (!offeringId || !teacherCode) return null;
+  const p = await getPool();
+  const { rows } = await p.query(
+    'update class_offerings set archived = true where id=$1 and teacher_code=$2 and archived = false returning *',
+    [offeringId, teacherCode]
+  );
+  return mapOfferingRow(rows[0] || null);
+}
+
 export async function listClassOfferingsWithStats(teacherCode) {
   const p = await getPool();
   const { rows } = await p.query(

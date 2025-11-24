@@ -30,6 +30,7 @@ import {
   getAttendance,
   getAttendanceEntry,
   createClassOffering,
+  archiveClassOffering,
   listClassOfferingsWithStats,
   getClassOfferingForTeacher,
   listSessionsForOffering,
@@ -886,6 +887,18 @@ app.post('/prof/classes', requireAuth('teacher'), async (req, res) => {
     });
   } catch (e) {
     return res.status(500).json({ error: 'class_create_failed' });
+  }
+});
+
+app.delete('/prof/classes/:id', requireAuth('teacher'), async (req, res) => {
+  try {
+    const teacherCode = req.user.code;
+    const offeringId = req.params.id;
+    const archived = await archiveClassOffering(offeringId, teacherCode);
+    if (!archived) return res.status(404).json({ error: 'class_not_found' });
+    return res.json({ success: true, class: archived });
+  } catch (e) {
+    return res.status(500).json({ error: 'class_delete_failed' });
   }
 });
 
