@@ -593,6 +593,32 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '500': { $ref: '#/components/responses/ServerError' }
+  /prof/classes/{id}:
+    delete:
+      tags: [Professor]
+      operationId: profDeleteClass
+      summary: Archivar/Eliminar una clase del docente
+      security: [ { bearerAuth: [] } ]
+      x-roles: [teacher]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Clase archivada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  class: { $ref: '#/components/schemas/ClassOffering' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
   /prof/classes/{id}/sessions:
     get:
       tags: [Professor]
